@@ -1,4 +1,3 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>Crown of Ambition</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -427,7 +426,8 @@ const SCENES={throne:{name:'THRONE ROOM',build:buildThrone,
   floor:{x0:14,x1:370,y0:126,y1:172}},
   park:{name:'A PARK NEAR THE PALACE',arena:'dusk',ground:'park'},
   heath:{name:'A HEATH',arena:'heath',ground:'heath'},
-  gallery:{name:'A PASSAGE',gallery:true}};
+  gallery:{name:'A PASSAGE',gallery:true},
+  feast:{name:'THE BANQUET',feast:true}};
 let sceneImg={};
 const sceneBG=n=>sceneImg[n]||(sceneImg[n]=SCENES[n].build());
 
@@ -544,6 +544,7 @@ const say=(who,t,o)=>Object.assign({a:'say',who,t},o);
 const think=(who,t)=>({a:'say',who,t,think:true});
 const narr=t=>({a:'say',who:'narr',t});
 const ask=(prompt,opts)=>({a:'choose',prompt,opts});
+const fillq=o=>Object.assign({a:'fill',tries:0,res:null,rt:0,miss:0},o);
 const typeq=o=>Object.assign({a:'type',tries:0,res:null,rt:0,miss:0},o);
 const cinema=o=>Object.assign({a:'cinema'},o);
 const card=(title,sub)=>({a:'card',title,sub});
@@ -572,6 +573,7 @@ function begin(a){
     const lines=wrap(a.t,pw),pages=[];for(let i=0;i<lines.length;i+=3)pages.push(lines.slice(i,i+3));
     ui.pages=pages;ui.i=0;ui.shown=0;
   }else if(a.a==='choose'){ui.sel=Math.max(0,a.opts.findIndex(o=>!o.dis));}
+  else if(a.a==='fill'){ui.sel=0;}
   else if(a.a==='type'){ui.t=0;tin.value='';try{tin.focus();}catch(_){}}
   else if(a.a==='walk'){for(const m of a.m){const ac=A(m.id);ac.tx=m.x;ac.ty=m.y;ac.spd=m.spd||46;}}
   else if(a.a==='fade'){fade.to=a.to;if(a.instant)fade.a=a.to;}
@@ -608,6 +610,7 @@ const FLOOR=SCENES.throne.floor;
 const goFloor=(x,y)=>[clamp(x,FLOOR.x0,FLOOR.x1),clamp(y,FLOOR.y0,FLOOR.y1)];
 const keys={l:0,r:0,u:0,d:0};
 function hsRect(h){
+  if(h.npc&&isFeast())return feastRect(A(h.npc));
   if(h.npc){const a=A(h.npc);return[a.x-12,a.y-40,24,42];}
   return h.rect;
 }
@@ -616,6 +619,7 @@ function hsStand(h){
   return[h.sx,h.sy];
 }
 function nearestHS(u){
+  if(isFeast())return u.near||null;
   const hero=A(G.hero);let best=null,bd=34;
   for(const h of u.hs){const s=hsStand(h),d=Math.hypot(s[0]-hero.x,(s[1]-hero.y)*1.6);if(d<bd){bd=d;best=h;}}
   return best;
@@ -628,6 +632,7 @@ function drawScene(){
   const sc=SCENES[G.scene];
   if(sc.arena){drawArenaScene();return;}
   if(sc.gallery){drawGalleryScene();return;}
+  if(sc.feast){drawFeastScene();return;}
   const sx=shake>0?Math.round((Math.random()-.5)*shake):0,sy=shake>0?Math.round((Math.random()-.5)*shake):0;
   ctx.save();ctx.beginPath();ctx.rect(0,0,W,SH);ctx.clip();ctx.translate(sx,sy);
   ctx.drawImage(sceneBG(G.scene),0,0);
@@ -644,6 +649,7 @@ function drawScene(){
   }
   drawLight(sc);
   drawGlints();
+  drawBubble();
   parts=parts.filter(p=>{p.life-=1/60;p.x+=p.vx/60;p.y+=p.vy/60;return p.life>0;});
   parts.forEach(p=>{ctx.globalAlpha=clamp(p.life*2,0,1);R(ctx,p.col,p.x,p.y,p.s,p.s);});ctx.globalAlpha=1;
   // ambition vignette: the more you want, the redder the edges
@@ -652,6 +658,24 @@ function drawScene(){
   const cold=a<.34;gr.addColorStop(0,cold?'rgba(20,60,120,0)':'rgba(120,0,16,0)');gr.addColorStop(1,cold?'rgba(20,60,120,'+(.18+(.34-a)*.8).toFixed(3)+')':'rgba(120,0,16,'+(.08+a*.4).toFixed(3)+')');
   ctx.fillStyle=gr;ctx.fillRect(0,0,W,SH);
   ctx.restore();
+}
+function drawBubble(){
+  const sp=speaker(),a=sp&&G.actors[sp];
+  if(!a||!a.vis)return;
+  const bx=Math.round(a.x+6),by=Math.round(a.y-41-17+Math.sin(time*5)*1);
+  R(ctx,'#000',bx-1,by-1,22,13);R(ctx,'#f4efe2',bx,by,20,11);
+  R(ctx,'#000',bx+3,by+11,5,2);R(ctx,'#f4efe2',bx+4,by+10,3,2);
+  const n=Math.floor(time*4)%4;
+  for(let i=0;i<3;i++)R(ctx,i<n?'#2a1c30':'#b8b0c0',bx+4+i*5,by+4,3,3);
+}
+function drawPop(u){
+  const lines=wrap(u.text,40).slice(0,7),h=34+lines.length*11,y0=Math.max(4,Math.round((SH-h)/2)+8),x0=14,w=W-28;
+  R(ctx,'rgba(0,0,0,.55)',0,0,W,H);
+  R(ctx,'#000',x0-2,y0-2,w+4,h+4);R(ctx,'#5a0a14',x0,y0,w,h);R(ctx,'#e0344a',x0,y0,w,2);R(ctx,'#e0344a',x0,y0+h-2,w,2);R(ctx,'#e0344a',x0,y0,2,h);R(ctx,'#e0344a',x0+w-2,y0,2,h);
+  T('NOT QUITE RIGHT  -'+(u.pen||0),W/2,y0+7,'#ffd0d0',8,'center','#000');
+  lines.forEach((l,i)=>T(l,x0+10,y0+22+i*11,'#ffffff',8,'left','#000'));
+  const f=Math.max(0,1-u.t/5);R(ctx,'#2a0408',x0+10,y0+h-9,w-20,4);R(ctx,'#ff7080',x0+10,y0+h-9,Math.round((w-20)*f),4);
+  T('THE METER IS PAUSED. READ WHY.',W/2,H-11,'#ffb0b0',8,'center','#000');
 }
 const speaker=()=>ui&&ui.a==='say'&&ui.who!=='narr'?ui.who:null;
 function drawProps(){
@@ -761,7 +785,8 @@ function drawPanel(){
   }else if(u.a==='explore'){
     wrap(u.objective||'',44).slice(0,2).forEach((l,i)=>T(l,12,PY+9+i*11,GOLD));
     const near=u.near;
-    if(near){T((isTouch?'TAP':'SPACE')+': '+near.verb,12,PY+36,'#fff1b8');}
+    if(isFeast()){T((isTouch?'TAP a person to look. TAP again: ':'LEFT/RIGHT look. SPACE: ')+(near?near.verb:''),12,PY+36,'#fff1b8');}
+    else if(near){T((isTouch?'TAP':'SPACE')+': '+near.verb,12,PY+36,'#fff1b8');}
     else T(isTouch?'TAP to walk. Get close to someone to speak.':'ARROWS walk. Walk close to a glint.',12,PY+36,DIM);
     const seen=u.hs.filter(h=>G.flags['seen_'+h.id]).length;
     if(u.target)T('TIME IS PASSING...',12,PY+50,DIM);else T('LOOKED AT '+seen+'/'+u.hs.length,12,PY+50,DIM);
@@ -898,7 +923,7 @@ function drawCinema(u){
    9. TITLE, HERO SELECT, ENDING
    ===================================================================== */
 let endSel=0;
-const DRAIN_EXPLORE=1.8,DRAIN_CHOOSE=1,DRAIN_TYPE=.5;
+const DRAIN_EXPLORE=4.5,DRAIN_CHOOSE=3.5,DRAIN_TYPE=1.5;
 function drawTitle(){
   titleBG(time);
   R(ctx,'rgba(6,4,14,.35)',0,0,W,H);
@@ -1037,14 +1062,14 @@ function update(dt){
   G.ambShown+=(G.amb-G.ambShown)*Math.min(1,dt*3);
   const hero=A(G.hero);
   // keyboard walking while exploring
-  if(ui&&ui.a==='explore'&&!journal&&hero){
+  if(ui&&ui.a==='explore'&&!journal&&hero&&!isFeast()){
     const vx=keys.r-keys.l,vy=keys.d-keys.u;
     if(vx||vy){const t=goFloor(hero.x+vx*16,hero.y+vy*12);hero.tx=t[0];hero.ty=t[1];hero.spd=62;ui.pend=null;hero.kb=true;}
     else if(hero.kb){hero.tx=hero.ty=null;hero.kb=false;}
   }
   if(!journal)for(const a of Object.values(G.actors))moveActor(a,dt);
-  if(ui&&(ui.a==='choose'||ui.a==='explore'||ui.a==='type')&&!journal&&!G.off&&!G.over){G.amb=Math.max(0,G.amb-dt*(ui.a==='explore'?DRAIN_EXPLORE:ui.a==='type'?DRAIN_TYPE:DRAIN_CHOOSE));}
-  if(G.amb<=0&&!G.off&&!G.over&&mode==='play'){G.over=1;gen=null;ui=null;G.explore=null;tin.blur();run(offScript(G.hero==='macbeth'?'guilt_m':'guilt_l',G.hero==='macbeth'?'You ran out of time. Guilt wore his ambition away.':'You ran out of time. The queen\'s mask slipped.'));return;}
+  if(ui&&(ui.a==='choose'||ui.a==='explore'||ui.a==='type'||ui.a==='fill')&&!journal&&!G.off&&!G.over){G.amb=Math.max(0,G.amb-dt*(ui.a==='explore'?DRAIN_EXPLORE:(ui.a==='type'||ui.a==='fill')?DRAIN_TYPE:DRAIN_CHOOSE));}
+  if(G.amb<=0&&!G.off&&!G.over&&mode==='play'&&!(ui&&ui.a==='pop')){G.over=1;gen=null;ui=null;G.explore=null;tin.blur();run(offScript(G.hero==='macbeth'?'guilt_m':'guilt_l',G.hero==='macbeth'?'You ran out of time. Guilt wore his ambition away.':'You ran out of time. The queen\'s mask slipped.'));return;}
   if(!ui||journal)return;
   switch(ui.a){
     case 'say':{
@@ -1054,13 +1079,16 @@ function update(dt){
     case 'gallery':galUpdate(dt);break;
     case 'fight':if(F.msgT>0)F.msgT-=dt;if(F.phase==='last')updateLast(dt);updateFight(dt);break;
     case 'wait':ui.d-=dt;if(ui.d<=0)done();break;
+    case 'fill':{ui.t+=dt;if(ui.miss>0)ui.miss-=dt;if(ui.res){ui.rt+=dt;if(ui.rt>1.4)done(ui.tries===0);}break;}
     case 'type':{ui.t+=dt;if(ui.miss>0)ui.miss-=dt;if(ui.res){ui.rt+=dt;if(ui.rt>1.6){tin.blur();done(ui.res==='ok');}}break;}
     case 'walk':{if(ui.m.every(m=>A(m.id).tx==null))done();break;}
     case 'fade':fade.to=ui.to;if(Math.abs(fade.a-ui.to)<.02)done();break;
     case 'card':ui.t+=dt;if(ui.t>3.4)done();break;
+    case 'pop':ui.t+=dt;if(ui.t>5)done();break;
     case 'warn':{const b=Math.floor(ui.t*2.5);ui.t+=dt;if(Math.floor(ui.t*2.5)!==b)SFX.bad();if(ui.t>4)done();break;}
     case 'cinema':{ui.t+=dt;if(ui.t>.9)ui.shown+=dt*21;break;}
     case 'explore':{
+      if(isFeast()){const o=feastOrder(ui);if(!ui.near||o.indexOf(ui.near)<0)ui.near=o[0]||null;break;}
       ui.near=nearestHS(ui);
       if(ui.pend&&hero.tx==null){const h=ui.pend;ui.pend=null;done(h.id);}
       break;}
@@ -1076,12 +1104,11 @@ function render(){
   else if(mode==='crawl')drawCrawl();
   else if(mode==='hero')drawHeroSelect();
   else if(mode==='end')drawEnd();
-  else if(mode==='scenes')drawSelector();
   else if(mode==='play'&&G){
     if(ui&&ui.a==='cinema')drawCinema(ui);
     else if(ui&&ui.a==='card')drawCard(ui);
     else if(ui&&ui.a==='warn')drawWarn(ui);
-    else{drawScene();if(!(ui&&(ui.a==='fight'||ui.a==='gallery')))drawHUD();if(ui&&ui.a==='fight'){drawFightOverlay();drawFightPanel();}else if(ui&&ui.a==='gallery'){drawGalleryHUD();drawGalleryPanel();}else{drawPanel();}if(ui&&ui.a==='type')drawType();}
+    else{drawScene();if(!(ui&&(ui.a==='fight'||ui.a==='gallery')))drawHUD();if(ui&&ui.a==='fight'){drawFightOverlay();drawFightPanel();}else if(ui&&ui.a==='gallery'){drawGalleryHUD();drawGalleryPanel();}else{drawPanel();}if(ui&&ui.a==='type')drawType();if(ui&&ui.a==='fill')drawFill();if(ui&&ui.a==='pop')drawPop(ui);}
     if(G.off&&!(ui&&ui.a==='warn'))drawOffBanner();
     if(journal)drawJournal();
   }
@@ -1091,27 +1118,6 @@ function chooseGeom(u){
   const pl=u.prompt?wrap(u.prompt,44).slice(0,2).length:0;
   const top=PY+(pl?(pl>1?31:22):12),rowH=Math.min(13,Math.floor((H-6-top)/u.opts.length));
   return{top,rowH};
-}
-/* TEMPORARY scene selector (testing). Set TEMP_SELECTOR=false to remove. */
-const TEMP_SELECTOR=true;
-const SCENE_NAMES={
-  macbeth:['3.1  The welcome','3.1  Macbeth alone','3.1  The two men','3.2  The queen, scorpions','3.3  The park: fight','3.4  Banquet: host, murderer','3.4  Banquet: the ghost','3.4  After the guests','3.5  Hecate','3.6  Lennox'],
-  lady:['3.1  The welcome','3.2  Lady alone, her husband','3.2  Scorpions','3.3  The park: fight','3.4  Banquet: hostess','3.4  Banquet: the ghost','3.4  After the guests','3.5  Hecate','3.6  Lennox']};
-let selHero=null,selIx=0;
-function openSelector(h){if(!TEMP_SELECTOR||!SCENE_NAMES[h]){startHero(h);return;}selHero=h;selIx=0;mode='scenes';SFX.select();}
-function startAt(h,ix){
-  heroSel=HEROES.indexOf(h);gen=null;ui=null;journal=false;toasts=[];parts=[];
-  newGame(h);G.sceneIx=ix;mode='play';fade.a=1;fade.to=0;SFX.select();
-  run(STORY[h](ix,false,ix>0));
-}
-function drawSelector(){
-  titleBG(time);R(ctx,'rgba(6,4,14,.8)',0,0,W,H);
-  T('TEMPORARY SCENE SELECTOR',W/2,10,BLOOD,8,'center');
-  T(LOOK[selHero].name,W/2,22,LOOK[selHero].col,8,'center');
-  const L=SCENE_NAMES[selHero],top=36,rh=16;
-  L.forEach((n,i)=>{const y=top+i*rh,on=i===selIx;if(on){R(ctx,'rgba(231,185,58,.2)',20,y-3,W-40,rh-1);R(ctx,GOLD,20,y-3,2,rh-1);}
-    T((on?'> ':'  ')+n,28,y,on?'#fff1b8':INK);});
-  T(isTouch?'TAP a scene':'UP/DOWN, SPACE to start. ESC: back',W/2,H-12,DIM,8,'center');
 }
 function startHero(h){
   heroSel=HEROES.indexOf(h);gen=null;ui=null;journal=false;toasts=[];parts=[];
@@ -1126,11 +1132,12 @@ function restartScene(){
 }
 function press(d){
   ac();
+  if(mode==='play'&&ui&&ui.a==='explore'&&isFeast()){if(d>=2)feastLook(d===3?1:-1);return;}
   if(mode==='title'){if(d<2){menuSel=1-menuSel;SFX.select();}}
-  else if(mode==='scenes'){const n=SCENE_NAMES[selHero].length;if(d===0)selIx=(selIx+n-1)%n;else if(d===1)selIx=(selIx+1)%n;SFX.select();}
   else if(mode==='hero'){if(d>=2){heroSel=(heroSel+(d===3?1:HEROES.length-1))%HEROES.length;SFX.select();}}
   else if(mode==='end'){if(d<2){endSel=1-endSel;SFX.select();}}
-  else if(mode==='play'&&ui&&(ui.a==='choose'||(ui.a==='gallery'&&ui.pr&&ui.opts))&&!journal){
+  else if(mode==='play'&&ui&&(ui.a==='choose'||ui.a==='fill'||(ui.a==='gallery'&&ui.pr&&ui.opts))&&!journal){
+    if(ui.res)return;
     const n=ui.opts.length;let s=ui.sel;
     for(let k=0;k<n;k++){s=(s+(d===0?n-1:d===1?1:0))%n;if(!ui.opts[s].dis)break;}
     ui.sel=s;SFX.select();}
@@ -1139,8 +1146,7 @@ function confirm(){
   ac();
   if(mode==='title'){if(menuSel===0){mode='crawl';crawlT=0;SFX.select();}else{setMusic(!musicOn);SFX.select();}}
   else if(mode==='crawl'){mode='hero';SFX.select();}
-  else if(mode==='scenes')startAt(selHero,selIx);
-  else if(mode==='hero')openSelector(HEROES[heroSel]);
+  else if(mode==='hero')startHero(HEROES[heroSel]);
   else if(mode==='end'){if(G.alt){if(endSel===0){if(G.lives>0)restartScene();else startHero(G.hero);}else{mode='hero';SFX.select();}}else if(endSel===0){mode='hero';SFX.select();}else startHero(G.hero);}
   else if(mode==='play'){
     if(journal){journal=false;return;}
@@ -1152,6 +1158,7 @@ function confirm(){
         else if(ui.i<ui.pages.length-1){ui.i++;ui.shown=0;SFX.select();}
         else done();
         break;}
+      case 'fill':fillPick();break;
       case 'choose':if(ui.opts[ui.sel].dis)return;SFX.select();done(ui.sel);break;
       case 'cinema':{if(ui.t<.9)return;const tot=ui.lines.join('').length;if(ui.shown<tot)ui.shown=tot;else if(ui.pages&&ui.pi<ui.pages.length-1){ui.pi++;ui.lines=ui.pages[ui.pi];ui.shown=0;SFX.select();}else done();break;}
       case 'card':if(ui.t>.9)done();break;
@@ -1176,6 +1183,34 @@ function submitType(){
   const v=tin.value;if(!v.trim())return;
   if(normTxt(v)===normTxt(u.gap)){u.res='ok';u.rt=0;SFX.up();}
   else{u.tries++;u.miss=.8;tin.value='';SFX.bad();G.amb=Math.max(0,G.amb-10);toast('NOT QUITE  -10',ICE);if(u.tries>=3){u.res='fail';u.rt=0;}}
+}
+const FILL_Y=108,FILL_RH=14;
+function fillPick(){
+  const u=ui;if(!u||u.a!=='fill'||u.res)return;
+  const o=u.opts[u.sel];if(o.dis)return;
+  if(o.ok){u.res='ok';u.rt=0;SFX.up();}
+  else{o.dis=true;u.tries++;u.miss=.8;SFX.bad();G.amb=Math.max(0,G.amb-10);toast('NOT QUITE  -10',ICE);
+    if(u.opts.every(q=>q.ok||q.dis)){u.sel=u.opts.findIndex(q=>q.ok);}else{const n=u.opts.length;let s=u.sel;for(let k=0;k<n;k++){s=(s+1)%n;if(!u.opts[s].dis)break;}u.sel=s;}}
+}
+function drawFill(){
+  const u=ui;
+  R(ctx,'rgba(6,4,14,.8)',0,26,W,SH-26);
+  const x=10,y=30,w=W-20,h=140;
+  R(ctx,'#15101c',x,y,w,h);R(ctx,GOLD,x,y,w,2);R(ctx,GOLD,x,y+h-2,w,2);R(ctx,GOLD,x,y,2,h);R(ctx,GOLD,x+w-2,y,2,h);
+  T('FROM MEMORY',W/2,y+7,GOLD,8,'center');
+  wrap(u.prompt||'Pick the missing words.',44).slice(0,1).forEach(l=>T(l,W/2,y+18,DIM,8,'center'));
+  const k=u.line.toLowerCase().indexOf(u.gap.toLowerCase());
+  const before=u.line.slice(0,k),after=u.line.slice(k+u.gap.length);
+  const shown=u.res==='ok'?u.gap:'_____';
+  const full=before+'['+shown+']'+after;
+  wrap(full,40).slice(0,3).forEach((l,i)=>T(l,W/2,y+32+i*11,u.res==='ok'?'#9af0b8':'#fff1b8',8,'center'));
+  u.opts.forEach((o,i)=>{
+    const yy=FILL_Y+i*FILL_RH,on=i===u.sel&&!u.res;
+    if(on){R(ctx,'#3a2a18',x+6,yy-2,w-12,FILL_RH-1);R(ctx,GOLD,x+6,yy-2,2,FILL_RH-1);}
+    if(o.dis){T('  '+o.t,x+10,yy,'#5a4e66',8,'left');R(ctx,'#a02030',x+12,yy+3,Math.min(w-24,o.t.length*8+8),1);}
+    else T((on?'> ':'  ')+o.t,x+10,yy,u.res&&o.ok?'#9af0b8':on?'#fff1b8':INK,8,'left');
+  });
+  T(u.res==='ok'?'EXACTLY AS WRITTEN.':(isTouch?'TAP THE RIGHT WORDS':'UP/DOWN, SPACE'),W/2,y+h-1-9,u.res==='ok'?'#9af0b8':DIM,8,'center');
 }
 function drawType(){
   const u=ui;
@@ -1203,7 +1238,7 @@ addEventListener('keydown',e=>{
   if(e.key in KEYMAP){const d=KEYMAP[e.key];if(!e.repeat)press(d);keys[['u','d','l','r'][d]]=1;e.preventDefault();}
   else if(e.key===' '||e.key==='Enter'){if(!e.repeat)confirm();e.preventDefault();}
   else if(e.key==='j'||e.key==='J'||e.key==='Tab'){toggleJ();e.preventDefault();}
-  else if(e.key==='Escape'){if(journal)journal=false;else if(mode==='scenes'){mode='hero';SFX.select();}}
+  else if(e.key==='Escape'){if(journal)journal=false;}
   else if(e.key==='m'||e.key==='M'){setMusic(!musicOn);}
 },{passive:false});
 addEventListener('keyup',e=>{if(e.key in KEYMAP)keys[['u','d','l','r'][KEYMAP[e.key]]]=0;});
@@ -1218,6 +1253,7 @@ function hsAt(x,y){
   for(const h of npcs.concat(props)){const r=hsRect(h);if(x>=r[0]-3&&x<=r[0]+r[2]+3&&y>=r[1]-3&&y<=r[1]+r[3]+3)return h;}
   return null;
 }
+function feastLook(dir){const u=G.explore;if(!u)return;const o=feastOrder(u);if(!o.length)return;let i=o.indexOf(u.near);i=i<0?0:clamp(i+dir,0,o.length-1);if(o[i]!==u.near){u.near=o[i];SFX.select();}}
 function walkTo(x,y){const hero=A(G.hero),t=goFloor(x,y);hero.tx=t[0];hero.ty=t[1];hero.spd=64;hero.kb=false;if(G.explore)G.explore.pend=null;}
 function setPend(h){const hero=A(G.hero),s=hsStand(h);hero.tx=s[0];hero.ty=s[1];hero.spd=64;hero.kb=false;G.explore.pend=h;}
 let pt=null;
@@ -1231,6 +1267,7 @@ cv.addEventListener('pointerdown',e=>{
     if(journal){journal=false;pt=null;return;}
     if(ui&&ui.a==='explore'){
       pt.explore=true;
+      if(isFeast()){const h=hsAt(p.x-Math.round(G.feastShift||0),p.y);if(h){if(ui.near&&ui.near.id===h.id){const id=h.id;SFX.select();done(id);pt=null;return;}ui.near=h;SFX.select();}else if(p.y<SH){feastLook(p.x<W/2?-1:1);}pt=null;return;}
       if(p.y<SH){const h=hsAt(p.x,p.y);pt.h=h;if(h){if(ui.near&&ui.near.id===h.id){const id=h.id;SFX.select();done(id);pt=null;return;}const hero=A(G.hero),st=hsStand(h);hero.tx=st[0];hero.ty=st[1];hero.spd=64;hero.kb=false;ui.pend=null;}else walkTo(p.x,p.y);}
       else if(ui.near){const id=ui.near.id;done(id);pt=null;}
     }
@@ -1241,7 +1278,8 @@ cv.addEventListener('pointermove',e=>{
   const p=pos(e);
   if(mode==='play'&&G&&ui){
     if(ui.a==='fight'&&F){const dx=p.x-pt.x,dy=p.y-pt.y;if(Math.hypot(dx,dy)>5)pt.moved=true;if(pt.moved){const m=Math.hypot(dx,dy),k=Math.min(1,m/26);F.stick.x=Math.abs(dx)>4?dx/m*k:0;F.stick.y=Math.abs(dy)>4?dy/m*k:0;}}
-    else if(ui.a==='choose'||(ui.a==='gallery'&&ui.pr&&ui.opts)){
+    else if(ui.a==='choose'||ui.a==='fill'||(ui.a==='gallery'&&ui.pr&&ui.opts)){
+      if(ui.a==='fill'&&ui.res)return;
       if(Math.abs(p.y-pt.ly)>9){ui.sel=clamp(ui.sel+(p.y>pt.ly?1:-1),0,ui.opts.length-1);pt.ly=p.y;pt.moved=true;SFX.select();}
     }else if(ui.a==='explore'&&pt.explore&&!pt.h&&p.y<SH){if(Math.hypot(p.x-pt.x,p.y-pt.y)>4){pt.moved=true;walkTo(p.x,p.y);}}
   }
@@ -1250,8 +1288,6 @@ function tapAt(p){
   if(mode==='crawl'){confirm();return;}
   if(mode==='title'){
     for(let i=0;i<2;i++){const y=186+i*17;if(p.x>112&&p.x<272&&p.y>y-6&&p.y<y+12){menuSel=i;confirm();return;}}
-  }else if(mode==='scenes'){
-    const n=SCENE_NAMES[selHero].length;for(let i=0;i<n;i++){const y=36+i*16;if(p.y>=y-3&&p.y<y+13){selIx=i;confirm();return;}}
   }else if(mode==='hero'){
     const cw=170,gap=10,x0=Math.round((W-(cw*HEROES.length+gap*(HEROES.length-1)))/2);
     for(let i=0;i<HEROES.length;i++){const x=x0+i*(cw+gap);if(p.x>=x&&p.x<=x+cw&&p.y>=24&&p.y<=216){if(heroSel===i)confirm();else{heroSel=i;SFX.select();}return;}}
@@ -1261,6 +1297,8 @@ function tapAt(p){
     if(ui.a==='choose'||(ui.a==='gallery'&&ui.pr&&ui.opts)){
       const g=chooseGeom(ui);
       for(let i=0;i<ui.opts.length;i++){const y=g.top+i*g.rowH;if(p.y>=y-3&&p.y<y+g.rowH-1){ui.sel=i;confirm();return;}}
+    }else if(ui.a==='fill'){
+      for(let i=0;i<ui.opts.length;i++){const y=FILL_Y+i*FILL_RH;if(p.y>=y-3&&p.y<y+FILL_RH-1){if(ui.sel===i||true){ui.sel=i;fillPick();}return;}}
     }else if(ui.a==='type'){tin.focus();}
     else if(ui.a!=='explore')confirm();
   }
@@ -1764,6 +1802,204 @@ function drawGalleryPanel(){
   
 }
 /* =====================================================================
+   THE FEAST, SEEN THROUGH THE HERO'S OWN EYES
+   You sit at the near end of a long table and look down it. Lords sit along both sides, the
+   other spouse at the far end. Banquo's chair is empty (and, for Macbeth, not for long).
+   World units are centimetres: X sideways, Z away from you, h height above the floor.
+   ===================================================================== */
+const FV={VX:192,VY:60,F:150,KX:340,EYE:130};
+const FEAST_SEATS={ross:[-88,250,'r'],lennox:[-88,410,'r'],lord2:[-88,570,'r'],lord1:[88,410,'l'],ghost:[88,250,'l'],lord:[88,570,'l']};
+const FEAST_HEAD=[0,760,'d'],FEAST_DOOR=[-135,885,'d'];
+const FEAST_SEATX={ross:262,lennox:284,lord1:240,lord2:300,lord:318,macbeth:150,lady:120,ghost:292};
+const fpx=(X,Z)=>FV.VX+FV.KX*X/Z;
+const fpy=(h,Z)=>FV.VY+FV.F*(FV.EYE-h)/Z;
+const isFeast=()=>!!(G&&SCENES[G.scene]&&SCENES[G.scene].feast);
+/* where is this actor, as seen from the hero's seat? null = not drawn */
+function feastSpot(a){
+  if(!a||!a.vis||a.id===G.hero)return null;
+  if(a.id==='ghost'&&G.hero!=='macbeth')return null;
+  let seat=FEAST_SEATS[a.id];
+  if(!seat&&(a.id==='lady'||a.id==='macbeth'))seat=FEAST_HEAD;
+  let t=0;
+  if(!seat||a.id==='m1'){seat=FEAST_DOOR;t=0;}
+  else{const sx=FEAST_SEATX[a.id];if(sx)t=clamp((sx-a.x)/(sx-62),0,1);}
+  const X=lerp(seat[0],FEAST_DOOR[0],t),Z=lerp(seat[1],FEAST_DOOR[1],t);
+  const seated=t<.03&&seat!==FEAST_DOOR;
+  let dir=seat[2];
+  if(!seated){dir=(a.tx!=null&&a.tx<a.x-1)?'u':'d';}
+  const sc=625/Z,x=fpx(X,Z),floor=fpy(0,Z);
+  const top=seated?fpy(143,Z):floor-41*sc;
+  const hgt=seated?28*sc:42*sc;
+  return {X,Z,dir,seated,sc,x,floor,top,hgt,t,seat};
+}
+/* the rectangle a tap or a glint should use for this person */
+function feastRect(a){
+  const s=feastSpot(a);if(!s)return [-99,-99,1,1];
+  const w=Math.max(22,26*s.sc),h=Math.max(30,s.hgt);
+  return [s.x-w/2,s.top-2,w,h];
+}
+function feastOrder(u){
+  if(!u._ord)u._ord=u.hs.filter(h=>h.npc).slice().sort((p,q)=>feastRect(A(p.npc))[0]-feastRect(A(q.npc))[0]);
+  return u._ord;
+}
+function feastChair(X,Z,side,head){
+  const sc=625/Z,x=fpx(X,Z),fl=fpy(0,Z);
+  if(head){
+    const w=34*sc,top=fpy(215,Z);
+    R(ctx,'#1c120c',x-w/2,top,w,fl-top-8*sc);R(ctx,'#4a3020',x-w/2,top,w,Math.max(1,2*sc));
+    R(ctx,'#c9a24a',x-w/2-sc,top-3*sc,Math.max(2,3*sc),Math.max(3,5*sc));R(ctx,'#c9a24a',x+w/2-2*sc,top-3*sc,Math.max(2,3*sc),Math.max(3,5*sc));
+    return;
+  }
+  const w=30*sc,back=fpy(112,Z),ox=side*13*sc;
+  R(ctx,'#241810',x+ox-w/2,back,w,fl-back-6*sc);
+  R(ctx,'#4a3424',x+ox-w/2,back,w,Math.max(1,2*sc));
+  R(ctx,'#14100a',x+ox-w/2+3*sc,back+8*sc,Math.max(1,w-6*sc),Math.max(1,18*sc));
+}
+function feastFigure(a){
+  const s=feastSpot(a);if(!s)return null;
+  const bob=s.seated?Math.sin(time*1.6+s.Z)*.5:0;
+  let sp=sprite(a.id,s.dir,s.seated?0:a.fr);
+  if(a.tint)sp=tinted(sp,a.tint);
+  ctx.save();ctx.globalAlpha=a.alpha==null?1:a.alpha;
+  if(!s.seated)R(ctx,'rgba(0,0,0,.4)',s.x-10*s.sc,s.floor-1,20*s.sc,Math.max(2,3*s.sc*.5));
+  const talk=(a.id===speaker())?Math.sin(time*14)*.5*s.sc*.4:0;
+  if(s.seated)ctx.drawImage(sp,0,0,26,28,Math.round(s.x-13*s.sc),Math.round(s.top+bob+talk),Math.round(26*s.sc),Math.round(28*s.sc));
+  else ctx.drawImage(sp,Math.round(s.x-13*s.sc),Math.round(s.top),Math.round(26*s.sc),Math.round(42*s.sc));
+  ctx.restore();
+  return s;
+}
+function feastQuad(c,a,b,d,e){ctx.fillStyle=c;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.lineTo(d[0],d[1]);ctx.lineTo(e[0],e[1]);ctx.closePath();ctx.fill();}
+function drawFeastScene(){
+  const u=ui;
+  // turn the head slightly toward whoever you are looking at
+  let want=0;
+  if(u&&u.a==='explore'&&u.near&&u.near.npc){const r=feastRect(A(u.near.npc));want=clamp((FV.VX-(r[0]+r[2]/2))*.08,-10,10);}
+  G.feastShift=(G.feastShift||0)+(want-(G.feastShift||0))*.08;
+  const sh=Math.round(G.feastShift+Math.sin(time*.6)*1.2);
+  const sx0=shake>0?Math.round((Math.random()-.5)*shake):0,sy0=shake>0?Math.round((Math.random()-.5)*shake):0;
+  ctx.save();ctx.beginPath();ctx.rect(0,0,W,SH);ctx.clip();ctx.translate(sh+sx0,sy0);
+  R(ctx,'#0a0710',-20,0,W+40,SH);
+  const ZB=900,ZN=60,WALL=320,CEIL=330;
+  // back wall
+  const bl=fpx(-WALL,ZB),br=fpx(WALL,ZB),bt=fpy(CEIL,ZB),bb=fpy(0,ZB);
+  R(ctx,'#2a2132',bl,bt,br-bl,bb-bt);
+  for(let r=0;r<6;r++){const y=bt+(bb-bt)*r/6;R(ctx,'#1c1624',bl,y,br-bl,1);for(let c=0;c<14;c++){R(ctx,'#1c1624',bl+(r%2?5:0)+c*((br-bl)/12),y,1,(bb-bt)/6);}}
+  // side walls, ceiling, floor
+  feastQuad('#241c2c',[fpx(-WALL,ZN),fpy(CEIL,ZN)],[bl,bt],[bl,bb],[fpx(-WALL,ZN),fpy(0,ZN)]);
+  feastQuad('#241c2c',[fpx(WALL,ZN),fpy(CEIL,ZN)],[br,bt],[br,bb],[fpx(WALL,ZN),fpy(0,ZN)]);
+  feastQuad('#14101c',[fpx(-WALL,ZN),fpy(CEIL,ZN)],[fpx(WALL,ZN),fpy(CEIL,ZN)],[br,bt],[bl,bt]);
+  feastQuad('#2c2420',[fpx(-WALL,ZN),fpy(0,ZN)],[fpx(WALL,ZN),fpy(0,ZN)],[br,bb],[bl,bb]);
+  // wall courses, ceiling beams and floor planks drawn as depth lines
+  for(let Z=120;Z<=ZB;Z+=110){
+    const yt=fpy(CEIL,Z),yb=fpy(0,Z),xl=fpx(-WALL,Z),xr=fpx(WALL,Z);
+    R(ctx,'rgba(0,0,0,.45)',xl-1,yt,2,yb-yt);R(ctx,'rgba(0,0,0,.45)',xr-1,yt,2,yb-yt);
+    ctx.fillStyle='#0c0812';ctx.fillRect(xl,yt,xr-xl,Math.max(1,3*150/Z));      // ceiling beam
+    ctx.fillStyle='rgba(0,0,0,.35)';ctx.fillRect(xl,yb,xr-xl,1);                 // floor seam
+  }
+  // banners on the side walls
+  for(const Z of[330,640]){for(const sd of[-1,1]){const x=fpx(sd*WALL,Z),y1=fpy(290,Z),y2=fpy(150,Z),w=Math.max(2,26*340/Z*.1);R(ctx,'#6a1420',x-sd*w,y1,w,y2-y1);R(ctx,'#c9a24a',x-sd*w,y1,w,1);R(ctx,'#c9a24a',x-sd*w,y2-1,w,1);}}
+  // the door the messenger comes through
+  {const dx1=fpx(-185,ZB),dx2=fpx(-85,ZB),dy1=fpy(215,ZB),dy2=fpy(0,ZB);R(ctx,'#07050a',dx1,dy1,dx2-dx1,dy2-dy1);R(ctx,'#3a2a1c',dx1-1,dy1-1,dx2-dx1+2,1);R(ctx,'#3a2a1c',dx1-1,dy1-1,1,dy2-dy1+1);R(ctx,'#3a2a1c',dx2,dy1-1,1,dy2-dy1+1);}
+  // the table
+  const ZT0=88,ZT1=800,TW=60,TH=72;
+  feastQuad('#7a5430',[fpx(-TW,ZT0),fpy(TH,ZT0)],[fpx(TW,ZT0),fpy(TH,ZT0)],[fpx(TW,ZT1),fpy(TH,ZT1)],[fpx(-TW,ZT1),fpy(TH,ZT1)]);
+  feastQuad('#5a1824',[fpx(-34,ZT0),fpy(TH,ZT0)],[fpx(34,ZT0),fpy(TH,ZT0)],[fpx(34,ZT1),fpy(TH,ZT1)],[fpx(-34,ZT1),fpy(TH,ZT1)]);
+  for(const sd of[-1,1])feastQuad('#2e1e12',[fpx(sd*TW,ZT0),fpy(TH,ZT0)],[fpx(sd*TW,ZT1),fpy(TH,ZT1)],[fpx(sd*TW,ZT1),fpy(TH-8,ZT1)],[fpx(sd*TW,ZT0),fpy(TH-8,ZT0)]);
+  // chairs
+  for(const id in FEAST_SEATS){const s=FEAST_SEATS[id];feastChair(s[0],s[1],s[0]<0?-1:1,false);}
+  feastChair(0,775,0,true);
+  // place settings and the feast itself, far to near
+  const items=[];
+  for(const id in FEAST_SEATS){const s=FEAST_SEATS[id];items.push({Z:s[1],f:()=>{const Z=s[1],X=s[0]*.5,x=fpx(X,Z),y=fpy(TH,Z),k=340/Z*.1;
+      R(ctx,'#d8d0c0',x-9*k,y-1,18*k,Math.max(1,3*k));R(ctx,'#fff6e0',x-6*k,y-1,12*k,1);
+      const gx=x+(s[0]<0?9:-9)*k*1.6;R(ctx,'#c9a24a',gx-1,y-5*k,Math.max(2,3*k),Math.max(2,5*k));R(ctx,'#7a1c2a',gx-1,y-5*k,Math.max(2,3*k),1);}});}
+  for(const Z of[300,520,700]){items.push({Z,f:()=>{const x=fpx(0,Z),y=fpy(TH,Z),k=340/Z*.1;
+      R(ctx,'#c9a24a',x-1.5*k,y-12*k,Math.max(2,3*k),12*k);R(ctx,'#c9a24a',x-4*k,y-1,8*k,Math.max(1,2*k));}});}
+  items.push({Z:420,f:()=>{const Z=420,x=fpx(0,Z),y=fpy(TH,Z),k=340/Z*.1;R(ctx,'#8a5a2a',x-12*k,y-5*k,24*k,5*k);R(ctx,'#b87a3a',x-10*k,y-6*k,20*k,2*k);}});
+  items.push({Z:600,f:()=>{const Z=600,x=fpx(12,Z),y=fpy(TH,Z),k=340/Z*.1;R(ctx,'#c8a070',x-6*k,y-3*k,12*k,3*k);}});
+  items.sort((a,b)=>b.Z-a.Z).forEach(i=>i.f());
+  // people, far to near
+  const people=Object.values(G.actors).map(a=>({a,s:feastSpot(a)})).filter(p=>p.s).sort((p,q)=>q.s.Z-p.s.Z);
+  const ghost=G.actors.ghost&&G.actors.ghost.vis&&G.hero==='macbeth'?feastSpot(G.actors.ghost):null;
+  for(const p of people){
+    const a=p.a;
+    if(a.id==='ghost'){
+      ctx.save();
+      const s=p.s,fl=.75+.2*Math.sin(time*6);
+      const g=ctx.createRadialGradient(s.x,s.top+s.hgt*.5,2,s.x,s.top+s.hgt*.5,s.sc*55);g.addColorStop(0,'rgba(150,210,255,'+(.42*fl).toFixed(2)+')');g.addColorStop(1,'rgba(150,210,255,0)');
+      ctx.fillStyle=g;ctx.fillRect(s.x-s.sc*55,s.top-s.sc*20,s.sc*110,s.hgt+s.sc*40);
+      ctx.restore();
+      a.tint='rgba(170,220,255,.5)';a.alpha=fl;
+    }
+    feastFigure(a);
+  }
+  // light: a dim hall, candles on the table, torches on the walls
+  lctx.globalCompositeOperation='source-over';lctx.clearRect(0,0,W,SH);
+  lctx.fillStyle='rgba(3,2,10,.55)';lctx.fillRect(0,0,W,SH);
+  lctx.globalCompositeOperation='destination-out';
+  const fl2=1+Math.sin(time*13)*.05;
+  const hole=(x,y,r,a)=>{const g=lctx.createRadialGradient(x,y,1,x,y,r);g.addColorStop(0,'rgba(0,0,0,'+a+')');g.addColorStop(.55,'rgba(0,0,0,'+(a*.5)+')');g.addColorStop(1,'rgba(0,0,0,0)');lctx.fillStyle=g;lctx.fillRect(x-r,y-r,r*2,r*2);};
+  for(const Z of[300,520,700])hole(fpx(0,Z)+sh,fpy(TH+10,Z),Math.max(18,9000/Z)*fl2,.9);
+  hole(FV.VX+sh,128,150,.7);
+  for(const p of people)if(p.s.Z<700)hole(p.s.x+sh,p.s.top+p.s.hgt*.5,Math.max(16,p.s.sc*34),.8);
+  for(const sd of[-1,1])for(const Z of[260,480,700])hole(fpx(sd*WALL,Z)+sh,fpy(215,Z),Math.max(12,5200/Z)*fl2,.75);
+  hole(fpx(-135,ZB)+sh,fpy(100,ZB),34,.9);
+  if(ghost)hole(ghost.x+sh,ghost.top+ghost.hgt*.4,ghost.sc*42,.9);
+  lctx.globalCompositeOperation='source-over';
+  ctx.save();ctx.translate(-(sh+sx0),-sy0);ctx.drawImage(lightCv,0,0);ctx.restore();
+  // flames over the dark
+  const fr=Math.floor(time*12)%3;
+  const flame=(x,y,k)=>{const w=Math.max(1,3*k),h=Math.max(2,6*k);R(ctx,'#e6762a',x-w/2,y-h-fr*.3,w,h);R(ctx,'#ffd070',x-w/4,y-h*.8,Math.max(1,w/2),h*.6);};
+  for(const Z of[300,520,700])flame(fpx(0,Z),fpy(TH+12,Z),340/Z*.2);
+  for(const sd of[-1,1])for(const Z of[260,480,700]){const x=fpx(sd*WALL,Z),y=fpy(215,Z),k=340/Z*.2;R(ctx,'#5a4a30',x-sd*2*k,y,Math.max(1,2*k),Math.max(2,5*k));flame(x-sd*3*k,y,k);}
+  // a cold chill when the ghost is at the table
+  if(ghost){const a=.18+.08*Math.sin(time*5);const g=ctx.createRadialGradient(FV.VX,SH/2,SH*.3,FV.VX,SH/2,SH*1.1);g.addColorStop(0,'rgba(40,90,160,0)');g.addColorStop(1,'rgba(40,90,160,'+a.toFixed(2)+')');ctx.fillStyle=g;ctx.fillRect(-20,0,W+40,SH);}
+  // your own hand and cup, at the bottom of your view
+  {const robe=(LOOK[G.hero]&&LOOK[G.hero].robe)||'#6a3a4a',sk=(LOOK[G.hero]&&LOOK[G.hero].skin)||'#e6bb94';
+   const bx=282+Math.sin(time*.9)*1.2,by=SH-4;
+   R(ctx,robe,bx-6,by-16,22,20);R(ctx,'rgba(0,0,0,.25)',bx-6,by-16,3,20);
+   R(ctx,sk,bx-4,by-24,14,9);R(ctx,'rgba(0,0,0,.18)',bx-4,by-17,14,2);
+   R(ctx,'#c9a24a',bx-1,by-42,10,2);R(ctx,'#c9a24a',bx+1,by-40,6,12);R(ctx,'#c9a24a',bx-1,by-30,10,2);R(ctx,'#7a1c2a',bx+1,by-40,6,2);R(ctx,'#fff1a8',bx+1,by-38,1,8);
+   R(ctx,sk,bx-4,by-32,5,10);R(ctx,sk,bx+7,by-32,4,10);}
+  ctx.restore();
+  drawGlintsFeast();
+  drawBubbleFeast();
+  parts=parts.filter(p=>{p.life-=1/60;return p.life>0;});
+  const a=G.ambShown/100;
+  const gr=ctx.createRadialGradient(W/2,SH/2,SH*.45,W/2,SH/2,SH*1.12);
+  const cold=a<.34;gr.addColorStop(0,cold?'rgba(20,60,120,0)':'rgba(120,0,16,0)');gr.addColorStop(1,cold?'rgba(20,60,120,'+(.18+(.34-a)*.8).toFixed(3)+')':'rgba(120,0,16,'+(.03+a*.2).toFixed(3)+')');
+  ctx.save();ctx.beginPath();ctx.rect(0,0,W,SH);ctx.clip();ctx.fillStyle=gr;ctx.fillRect(0,0,W,SH);ctx.restore();
+}
+/* names and markers: shifted by the same head turn as the scene */
+function drawGlintsFeast(){
+  const u=G.explore;if(!u)return;
+  const sh=Math.round(G.feastShift||0);
+  ctx.save();ctx.translate(sh,0);
+  for(const h of u.hs){
+    if(!h.npc)continue;const a=A(h.npc),r=feastRect(a);if(r[0]<-90)continue;
+    const cx=r[0]+r[2]/2,done=G.flags['seen_'+h.id],p=(Math.sin(time*4+cx)+1)/2,cy=r[1]-5;
+    if(!done){R(ctx,'rgba(255,230,140,'+(.5+.5*p).toFixed(2)+')',Math.round(cx)-1,Math.round(cy)-3,2,6);R(ctx,'rgba(255,230,140,'+(.5+.5*p).toFixed(2)+')',Math.round(cx)-3,Math.round(cy)-1,6,2);}
+  }
+  if(u.near&&u.near.npc){
+    const r=feastRect(A(u.near.npc)),cx=r[0]+r[2]/2,nm=u.near.name,w=nm.length*8+8,x=clamp(cx-w/2,2-sh,W-w-2-sh),yy=clamp(r[1]-24+Math.sin(time*6)*1.2,2,SH-14);
+    R(ctx,'#000',x-1,yy-1,w+2,13);R(ctx,'#2a1c10',x,yy,w,11);R(ctx,GOLD,x,yy,w,1);
+    T(nm,x+4,yy+2,'#fff1b8',8,'left',null);
+    // a little frame around them
+    R(ctx,'rgba(255,241,184,.7)',r[0]-1,r[1]-1,r[2]+2,1);R(ctx,'rgba(255,241,184,.7)',r[0]-1,r[1]+r[3],r[2]+2,1);R(ctx,'rgba(255,241,184,.7)',r[0]-1,r[1]-1,1,r[3]+2);R(ctx,'rgba(255,241,184,.7)',r[0]+r[2],r[1]-1,1,r[3]+2);
+  }
+  ctx.restore();
+}
+function drawBubbleFeast(){
+  const sp=speaker(),a=sp&&G.actors[sp],s=a&&feastSpot(a);
+  if(!s)return;
+  const sh=Math.round(G.feastShift||0);
+  const bx=Math.round(s.x+6+sh),by=Math.round(s.top-17+Math.sin(time*5)*1);
+  R(ctx,'#000',bx-1,by-1,22,13);R(ctx,'#f4efe2',bx,by,20,11);
+  R(ctx,'#000',bx+3,by+11,5,2);R(ctx,'#f4efe2',bx+4,by+10,3,2);
+  const n=Math.floor(time*4)%4;
+  for(let i=0;i<3;i++)R(ctx,i<n?'#2a1c30':'#b8b0c0',bx+4+i*5,by+4,3,3);
+}
+/* =====================================================================
    12. THE STORY  (Act 3, Scenes 1-2, seen through a marriage)
    RULES OF THIS FILE
    1. Every word a character SPEAKS is the play's own text. Q('...') marks it, and a checking
@@ -1781,7 +2017,8 @@ const WRONG=25;
 function* wrongHit(o){
   G.amb=Math.max(0,G.amb-WRONG);G.mistakes=(G.mistakes||0)+1;G.hist.push({d:-WRONG,why:'wrong'});
   G.lastWrong={off:o.off,note:o.note};
-  shake=9;G.flash=1;SFX.bad();toast('NOT IN THE PLAY -'+WRONG,BLOOD);
+  shake=9;G.flash=1;SFX.bad();
+  yield {a:'pop',text:o.note||'That is not what the play says here. Listen to the lines again.',pen:WRONG};
   if(G.amb<=0){G.over=1;yield* offScript(o.off,o.note);}
 }
 function* pick(prompt,opts){const s=shuf(opts);while(true){const i=yield ask(prompt,s);const o=s[i];if(o.ok)return o;yield* wrongHit(o);o.dis=true;}}
@@ -1934,8 +2171,15 @@ function* one(hero,n){
 }
 /* typed recall: finish a line of the play from memory. Three tries, and each miss costs time. */
 function* recall(hero,n){
-  const ok=yield typeq({prompt:n.prompt||'Finish the line from memory.',line:n.line,gap:n.gap});
+  const opts=[{t:n.gap,ok:1}].concat((n.bad||['',' ']).map(t=>({t})));
+  const ord=window.__noShuffle?opts:shuf(opts);
+  const ok=yield fillq({prompt:n.prompt||'Pick the words that finish the line.',line:n.line,gap:n.gap,opts:ord});
   if(ok){right();G.said.push(n.gap);G.typed=(G.typed||0)+1;}
+}
+/* a clue: the student must pick what the last speech told them. The notebook fills in only when they are right. */
+function* clue(i,prompt,good,note,bad1,bad2){
+  const r=yield* pick(prompt,[ok(good),bad1,bad2]);
+  right();G.said.push(note);fact(i,note);
 }
 /* one plain-English question about WHY. Understanding, not memory. */
 function* plainOne(n){
@@ -1999,7 +2243,7 @@ function* macbethWelcome(){
     plain:[ok('Invite him to the feast tonight.'),
            no('Ask Banquo to stay at the palace.','peace','Macbeth needs Banquo away from the palace. He tells the murderers it must be done "'+Q('something from the palace')+'".'),
            no('Ask Banquo to share his thoughts.','banquo_king','Banquo has just said "'+Q('hush! no more')+'". Macbeth does not ask what he thinks.')],
-    real:[ok(Q('To-night we hold a solemn supper sir')),
+    real:[ok(Q("I'll request your presence.")),
           no(Q('Come, love and health to all'),'peace','That is Macbeth in 3.4, toasting his guests at the banquet.'),
           no(Q("I'll call upon you straight: abide within."),'confess','That is Macbeth in 3.1, speaking in private to the murderers.')],
     spoken:Q("To-night we hold a solemn supper sir, And I'll request your presence.")});
@@ -2014,44 +2258,47 @@ function* macbethWelcome(){
           no(Q('Bring them before us.'),'confess','That is Macbeth LATER in this scene, asking his attendant to bring in the two men.')],
     spoken:Q('Ride you this afternoon?')});
   yield say('banquo',Q('Ay, my good lord.'));
-  fact(0,'Rides this afternoon');
+  yield* clue(0,'What did Banquo just tell you?','Banquo rides out this afternoon','Rides this afternoon',
+    no('Banquo rides out tomorrow morning','peace','Macbeth asked "'+Q('Ride you this afternoon?')+'" and Banquo said "'+Q('Ay')+'". He rides today.'),
+    no('Banquo stays at the palace today','confess','Banquo said "'+Q('Ay')+'". Yes, he rides this afternoon.'));
   yield say('macbeth',Q("We should have else desired your good advice, Which still hath been both grave and prosperous, In this day's council; but we'll take to-morrow. Is't far you ride?"));
   yield say('banquo',Q("As far, my lord, as will fill up the time 'Twixt this and supper: go not my horse the better, I must become a borrower of the night For a dark hour or twain."));
-  fact(1,'Back after dark');
+  yield* clue(1,'How late will Banquo be?','Banquo will be back after dark','Back after dark',
+    no('Banquo will be back before noon','peace','Banquo says he will be "'+Q('a borrower of the night')+'". He rides into the dark.'),
+    no('Banquo will not come back at all','confess','Banquo promises to be at the feast. He will be late, not gone.'));
   yield say('macbeth',Q('Fail not our feast.'));
   yield say('banquo',Q('My lord, I will not.'));
   yield say('macbeth',Q("We hear, our bloody cousins are bestow'd In England and in Ireland, not confessing Their cruel parricide, filling their hearers With strange invention: but of that to-morrow, When therewithal we shall have cause of state Craving us jointly. Hie you to horse: adieu, Till you return at night. Goes Fleance with you?"));
   yield say('banquo',Q("Ay, my good lord: our time does call upon 's."));
-  fact(2,'His son goes too');
-  yield* plainOne({prompt:'What do the three answers give Macbeth?',said:'A dark hour, Banquo and his son alone.',
-    plain:[ok('A dark hour with Banquo and his son alone.'),
+  yield* clue(2,'Who rides with Banquo?','His son Fleance rides with him','His son goes too',
+    no('Banquo rides alone','banquo_king','Macbeth asked "'+Q('Goes Fleance with you?')+'" and Banquo said "'+Q('Ay')+'".'),
+    no('Fleance stays to guard the palace','peace','Banquo said "'+Q('Ay')+'". Fleance rides with him.'));
+  yield* plainOne({prompt:'What do the three answers give Macbeth?',said:'A chance to murder Banquo and Fleance.',
+    plain:[ok('A chance to murder Banquo and Fleance.'),
            no('Proof that Banquo plots against him.','banquo_king','Macbeth has no proof and does not look for any. He fears the witches\' promise that Banquo\'s sons will be kings.'),
            no('A reason to ask Banquo to stay home.','peace','Macbeth wants Banquo OUT of the palace, riding into the dark.')]});
-  yield* two('macbeth',{prompt:'Send him on his way.',
-    plain:[ok('Wish him well and show him nothing.'),
-           no('Tell him what you have planned.','confess','Macbeth keeps his plan secret from Banquo, and from his wife.'),
-           no('Tell him to bring his son home early.','peace','Macbeth wants both of them out, and late.')],
-    real:[ok(Q('I wish your horses swift and sure of foot')),
-          no(Q("Thou art the best o' the cut-throats"),'confess','That is Macbeth in 3.4, praising the First Murderer after Banquo is dead.'),
-          no(Q('Get thee gone: to-morrow'),'confess','That is Macbeth in 3.4, sending the First Murderer away.')],
-    spoken:Q("I wish your horses swift and sure of foot; And so I do commend you to their backs. Farewell.")});
+  yield say('macbeth',Q("I wish your horses swift and sure of foot; And so I do commend you to their backs. Farewell."));
   yield say('macbeth',Q("Let every man be master of his time Till seven at night: to make society The sweeter welcome, we will keep ourself Till supper-time alone: while then, God be with you!"));
   plot('ACT 3, SCENE 1','Macbeth invites Banquo to the feast. Then he learns that Banquo rides out today, will return after dark, and takes his son Fleance.');
   yield* exitCourt(['banquo','lady','ross','lennox']);
   yield narr('Macbeth keeps only one attendant with him.');
-  yield* plainOne({prompt:'Banquo is gone. What will Macbeth do?',said:'He sends for the two men.',
-    plain:[ok('Send for the two men he has summoned.'),
+  yield* plainOne({prompt:'Banquo is gone. What will Macbeth do?',said:'He sends for the murderers.',
+    plain:[ok('Send for the murderers he has summoned.'),
            no('Wait and trust the witches to protect him.','peace','Macbeth does not trust fate to protect him. He acts before Banquo can.'),
            no("Name Banquo's family as his heirs.",'banquo_king','Macbeth wants his own sons to follow him. That is what troubles him.')]});
   yield* two('macbeth',{prompt:'Speak to your attendant in private.',
-    plain:[ok('Ask if the men you sent for are here.'),
+    plain:[ok('Ask if the murderers you sent for are here.'),
            no('Ask him to fetch Banquo back.','peace','Macbeth has just sent Banquo away, on purpose.'),
-           no('Tell him to guard the palace gate.','banquo_king','Macbeth wants the two men let in, not kept out.')],
+           no('Tell him to guard the palace gate.','banquo_king','Macbeth wants the murderers let in, not kept out.')],
     real:[ok(Q('attend those men our pleasure?')),
           no(Q('Bring them before us.'),'confess','That is the NEXT thing Macbeth says, after the attendant has answered.'),
           no(Q("Is he dispatch'd?"),'confess','That is Macbeth in 3.4, at the banquet, asking about Banquo.')],
     spoken:Q("Sirrah, a word with you: attend those men Our pleasure?")});
   yield say('attendant',Q('They are, my lord, without the palace gate.'));
+  yield* plainOne({prompt:'Where are the murderers now?',said:'Waiting outside the palace gate.',
+    plain:[ok('Waiting outside the palace gate.'),
+           no('Already inside the throne room.','banquo_king','The attendant said they are "'+Q('without the palace gate')+'". That means outside.'),
+           no('Still on the road to Forres.','peace','The attendant said they are "'+Q('without the palace gate')+'". They have arrived.')]});
   yield say('macbeth',Q('Bring them before us.'));
   yield* exitCourt(['attendant']);
 }
@@ -2059,31 +2306,41 @@ function* macbethWelcome(){
 /* ===================== MOVEMENT 2 : THE PRIVATE THOUGHT  (Macbeth) ===================== */
 function* macbethThought(){
   yield narr('Macbeth is alone.');
-  yield* one('macbeth',{prompt:'Being king is worth nothing unless...',
-    real:[ok(Q('To be thus is nothing')),
-          no(Q('why, chance may crown me'),'sunset','That is Macbeth in Act 1, Scene 3, before he was king. He said: leave it to chance.'),
-          no(Q('Whole as the marble, founded as the rock'),'peace','That is Macbeth in 3.4. He says how safe he WOULD have felt, if Fleance had died.')],
-    spoken:Q('To be thus is nothing; But to be safely thus.')});
-  yield* one('macbeth',{prompt:'His fear of Banquo goes deep.',
+  {
+    const p=yield* pick('Being king is worth nothing unless...',[
+      ok('he is safe from his enemies.'),
+      no('his people love him.','sunset','Macbeth does not ask to be loved. He asks to be safe: "'+Q('To be thus is nothing')+'".'),
+      no('he is richer than everyone else.','confess','Wealth is never his worry. He wants to be safe on the throne.')]);
+    if(!p.ok)yield* offScript(p.off,p.note);
+    const r1=yield* pick('Now say the first part of his line:',[
+      ok(Q('To be thus is nothing')),
+      no(Q('why, chance may crown me'),'sunset','That is Macbeth in Act 1, Scene 3, before he was king. He said: leave it to chance.'),
+      no(Q('Is this a dagger which I see before me?'),'dagger','That is Macbeth in Act 2, Scene 1, seeing the dagger before he kills Duncan.')]);
+    if(!r1.ok)yield* offScript(r1.off,r1.note);
+    const r2=yield* pick('Now say the second part:',[
+      ok(Q('But to be safely thus')),
+      no(Q('Whole as the marble, founded as the rock'),'peace','That is Macbeth in 3.4. He says how safe he WOULD have felt, if Fleance had died.'),
+      no(Q("But in them nature's copy's not eterne"),'ghost','That is Macbeth LATER, in 3.2, telling his wife that Banquo and Fleance will not live for ever.')]);
+    if(!r2.ok)yield* offScript(r2.off,r2.note);
+    right();G.said.push(r2.t);
+    yield say('macbeth',Q('To be thus is nothing; But to be safely thus.'));
+  }
+  yield* one('macbeth',{prompt:'One lord troubles him more than any other.',
     real:[ok(Q('Our fears in Banquo stick deep')),
-          no(Q('Is this a dagger which I see before me?'),'dagger','That is Macbeth in Act 2, Scene 1, seeing the dagger before he kills Duncan.'),
-          no(Q('Stars, hide your fires'),'confess','That is Macbeth in Act 1, Scene 4, a secret aside about his "black and deep desires".')],
+          no('Banquo is my most trusted friend','peace','Macbeth does not trust Banquo. He fears him.'),
+          no('I shall name Banquo my heir','banquo_king','Macbeth never offers Banquo the crown. He wants it for his own line.')],
     spoken:Q("Our fears in Banquo Stick deep; and in his royalty of nature Reigns that which would be fear'd: 'tis much he dares; And, to that dauntless temper of his mind, He hath a wisdom that doth guide his valour To act in safety. There is none but he Whose being I do fear:")});
-  yield* one('macbeth',{prompt:'The witches gave him a crown with no heirs.',
+  yield* one('macbeth',{prompt:'The witches made him king, with no heirs.',
     real:[ok(Q('Upon my head they placed a fruitless crown')),
           no(Q('thou shalt be king hereafter!'),'banquo_king','That is a witch, not Macbeth, in Act 1, Scene 3. It is the prophecy about Macbeth himself.'),
           no(Q('I have done the deed'),'confess','That is Macbeth in Act 2, Scene 2, to his wife, right after killing Duncan.')],
     spoken:Q("Upon my head they placed a fruitless crown, And put a barren sceptre in my gripe, Thence to be wrench'd with an unlineal hand, No son of mine succeeding.")});
   yield* one('macbeth',{prompt:'He killed Duncan for Banquo\'s sons.',
-    real:[ok(Q("the gracious Duncan have I murder'd")),
-          no(Q("If it were done when 'tis done"),'confess','That is Macbeth in Act 1, Scene 7, still planning to kill Duncan.'),
-          no(Q('Blood hath been shed ere now'),'ghost','That is Macbeth in 3.4, after he sees the ghost at the banquet.')],
+    real:[ok(Q("For Banquo's issue have I filed my mind")),
+          no(Q('Our fears in Banquo stick deep'),'confess','You said that a moment ago, about fear. It does not say what he did for Banquo\'s sons.'),
+          no(Q('Let your remembrance apply to Banquo'),'peace','That is Macbeth LATER, in 3.2, telling his wife how to treat Banquo at the feast.')],
     spoken:Q("If 't be so, For Banquo's issue have I filed my mind; For them the gracious Duncan have I murder'd; Put rancours in the vessel of my peace Only for them; and mine eternal jewel Given to the common enemy of man, To make them kings, the seed of Banquo kings!")});
-  yield* one('macbeth',{prompt:'He would rather fight fate than accept it.',
-    real:[ok(Q('Rather than so, come fate into the list')),
-          no(Q("I am in blood stepp'd in so far"),'confess','That is Macbeth at the END of 3.4, after the banquet. It has not happened yet.'),
-          no(Q('Hence, horrible shadow!'),'ghost','That is Macbeth in 3.4, to the ghost of Banquo.')],
-    spoken:Q("Rather than so, come fate into the list. And champion me to the utterance! Who's there!")});
+  yield say('macbeth',Q("Rather than so, come fate into the list. And champion me to the utterance! Who's there!"));
   yield say('macbeth',Q('Now go to the door, and stay there till we call.'));
   yield* plainOne({prompt:'What is Macbeth most afraid of?',said:"That Banquo's sons will take the crown.",
     plain:[ok("That Banquo's sons will take the crown."),
@@ -2091,12 +2348,11 @@ function* macbethThought(){
            no('That the witches have lied to him.','peace','He believes them. That is the trouble: they promised the crown to Banquo\'s sons.')]});
   yield* plainOne({prompt:'What has his ambition cost Macbeth?',said:'His peace of mind, and his soul.',
     plain:[ok('His peace of mind, and his soul.'),
-           no('He wants to give the crown back.','sunset','Macbeth never wants to give it up. He would rather fight fate.'),
+           no('His peace of mind, but his soul is safe.','sunset','He says he has given his "'+Q('eternal jewel')+'" (his soul) to "'+Q('the common enemy of man')+'". It is not safe.'),
            no('Nothing. He is happy as king.','confess','He admits the cost only to himself, alone. In public he hides it.')]});
-  yield narr('Say Macbeth\'s words again, from memory. Type the missing words.');
-  yield* recall('macbeth',{line:Q('To be thus is nothing; But to be safely thus'),gap:'safely thus'});
-  yield* recall('macbeth',{line:Q('Our fears in Banquo Stick deep'),gap:'stick deep'});
-  yield* recall('macbeth',{line:Q('Rather than so, come fate into the list'),gap:'into the list'});
+  yield narr('Say Macbeth\'s words again, from memory. Pick the missing words.');
+  yield* recall('macbeth',{line:Q('To be thus is nothing; But to be safely thus'),gap:'safely thus',bad:['quite alone', 'long crowned']});
+  yield* recall('macbeth',{line:Q('Our fears in Banquo Stick deep'),gap:'stick deep',bad:['run deep', 'cut deep']});
   plot('ACT 3, SCENE 1','Alone, Macbeth admits he fears only Banquo. The witches gave Banquo\'s sons the crown, not his own. Macbeth would rather fight fate than accept it.');
 }
 
@@ -2114,20 +2370,30 @@ function* ladyWelcome(){
           no(Q('Give me the daggers'),'lady_arrest','That is Lady Macbeth in Act 2, Scene 2, to her husband after Duncan\'s murder.'),
           no(Q('Are you a man?'),'lady_arrest','That is Lady Macbeth in 3.4, to her husband at the banquet.')],
     spoken:Q("If he had been forgotten, It had been as a gap in our great feast, And all-thing unbecoming.")});
+  yield* plainOne({prompt:'Do you know of any plan against Banquo?',said:'No. Her husband has told her nothing.',
+    plain:[ok('No. Your husband has told you nothing.'),
+           no('Yes. He told you he would deal with him.','lady_arrest','Macbeth later tells her: "'+Q('Be innocent of the knowledge, dearest chuck')+'". He keeps the plan from her.'),
+           no('Yes. You helped to plan it.','banquo_king','Lady Macbeth planned Duncan\'s murder, but she knows nothing of a plan for Banquo.')]});
   yield say('macbeth',Q("To-night we hold a solemn supper sir, And I'll request your presence."));
   yield say('banquo',Q("Let your highness Command upon me; to the which my duties Are with a most indissoluble tie For ever knit."));
   yield narr('You say little now. But you watch your husband, and you listen.');
   yield say('macbeth',Q('Ride you this afternoon?'));
   yield say('banquo',Q('Ay, my good lord.'));
-  fact(0,'Rides this afternoon');
+  yield* clue(0,'What did Banquo just tell your husband?','Banquo rides out this afternoon','Rides this afternoon',
+    no('Banquo rides out tomorrow morning','peace','Macbeth asked "'+Q('Ride you this afternoon?')+'" and Banquo said "'+Q('Ay')+'". He rides today.'),
+    no('Banquo stays at the palace today','confess','Banquo said "'+Q('Ay')+'". Yes, he rides this afternoon.'));
   yield say('macbeth',Q("We should have else desired your good advice, Which still hath been both grave and prosperous, In this day's council; but we'll take to-morrow. Is't far you ride?"));
   yield say('banquo',Q("As far, my lord, as will fill up the time 'Twixt this and supper: go not my horse the better, I must become a borrower of the night For a dark hour or twain."));
-  fact(1,'Back after dark');
+  yield* clue(1,'How late will Banquo be?','Banquo will be back after dark','Back after dark',
+    no('Banquo will be back before noon','peace','Banquo says he will be "'+Q('a borrower of the night')+'". He rides into the dark.'),
+    no('Banquo will not come back at all','confess','Banquo promises to be at the feast. He will be late, not gone.'));
   yield say('macbeth',Q('Fail not our feast.'));
   yield say('banquo',Q('My lord, I will not.'));
   yield say('macbeth',Q("We hear, our bloody cousins are bestow'd In England and in Ireland, not confessing Their cruel parricide, filling their hearers With strange invention: but of that to-morrow, When therewithal we shall have cause of state Craving us jointly. Hie you to horse: adieu, Till you return at night. Goes Fleance with you?"));
   yield say('banquo',Q("Ay, my good lord: our time does call upon 's."));
-  fact(2,'His son goes too');
+  yield* clue(2,'Who rides with Banquo?','His son Fleance rides with him','His son goes too',
+    no('Banquo rides alone','banquo_king','Your husband asked "'+Q('Goes Fleance with you?')+'" and Banquo said "'+Q('Ay')+'".'),
+    no('Fleance stays to guard the palace','peace','Banquo said "'+Q('Ay')+'". Fleance rides with him.'));
   yield say('macbeth',Q("I wish your horses swift and sure of foot; And so I do commend you to their backs. Farewell."));
   yield narr('Banquo bows and goes to the door. What did you just see?');
   yield* plainOne({prompt:'What was your husband finding out?',said:'When Banquo is away, and who goes too.',
@@ -2135,7 +2401,7 @@ function* ladyWelcome(){
            no('Whether Banquo will sit beside him.','peace','Macbeth never asks this. His questions were all about the ride.'),
            no('Whether Banquo is still loyal.','peace','Macbeth never asks this. His questions were all about the ride.')]});
   yield* one('lady',{prompt:'Which words were his excuse for asking?',
-    real:[ok(Q('desired your good advice')),
+    real:[ok(Q('desired your good advice').replace('your',"[Banquo's]")),
           no(Q('Fail not our feast.'),'peace','That makes sure Banquo comes to the feast. It is not an excuse for the questions.'),
           no(Q('Let every man be master of his time'),'peace','That is the dismissal, said to everyone in the room.')]});
   yield* plainOne({prompt:'What do you notice about your husband?',said:'He wants Banquo and his son out after dark.',
@@ -2164,31 +2430,31 @@ function* ladyThought(){
            no('Ask if the king has hired anyone.','lady_arrest','You do not know about any hired men. Your husband has not told you.'),
            no('Order the servant to bring Banquo back.','peace','You have no reason to call Banquo back. You only wonder where he is.')],
     real:[ok(Q('Is Banquo gone from court?')),
-          no(Q('Give me the daggers'),'lady_arrest','That is Lady Macbeth in Act 2, Scene 2, to her husband after Duncan\'s murder.'),
-          no(Q('Unsex me here'),'lady_arrest','That is Lady Macbeth in Act 1, Scene 5, alone, calling on spirits.')],
+          no('Banquo must not live to ride home','lady_arrest','Lady Macbeth knows of no plan against Banquo. She only wonders where he is.'),
+          no('Banquo, give me the daggers','lady_arrest','"'+Q('Give me the daggers')+'" is Lady Macbeth in Act 2, Scene 2, to her husband, after Duncan\'s murder.')],
     spoken:Q('Is Banquo gone from court?')});
   yield say('servant',Q('Ay, madam, but returns again to-night.'));
+  yield* plainOne({prompt:'What did the servant tell you?',said:'Banquo has gone, but returns tonight.',
+    plain:[ok('Banquo has gone, but returns tonight.'),
+           no('Banquo has gone and will not return.','peace','The servant said "'+Q('returns again to-night')+'". He is coming back.'),
+           no('Banquo has not left the palace yet.','banquo_king','The servant said Banquo is gone: "'+Q('Ay, madam')+'".')]});
   yield* two('lady',{prompt:'You want a word with the king.',
     plain:[ok('Ask the servant to tell the king.'),
            no('Tell the servant to keep the king away.','peace','You want to talk to your husband, not avoid him.'),
            no('Go and find the king yourself.','banquo_king','Lady Macbeth sends a servant. She does not go herself.')],
-    real:[ok(Q('Say to the king, I would attend his leisure')),
+    real:[ok(Q('I would attend his leisure')),
           no(Q('Sit, worthy friends: my lord is often thus'),'lady_arrest','That is Lady Macbeth in 3.4, to the guests, when Macbeth sees the ghost.'),
           no(Q("sleek o'er your rugged looks"),'lady_arrest','That is Lady Macbeth LATER in this scene, to Macbeth himself.')],
     spoken:Q('Say to the king, I would attend his leisure For a few words.')});
   yield say('servant',Q('Madam, I will.'));
   yield* exitCourt(['servant']);
   yield narr('Lady Macbeth is alone.');
-  yield* one('lady',{prompt:'She has what she wanted. It brings no joy.',
+  yield* one('lady',{prompt:'Being queen has not made Lady Macbeth happy.',
     real:[ok(Q("Nought's had, all's spent")),
           no(Q('you spirits that tend on mortal thoughts'),'lady_arrest','That is Lady Macbeth in Act 1, Scene 5, before Duncan\'s murder.'),
           no(Q('A little water clears us of this deed'),'wash','That is Lady Macbeth in Act 2, Scene 2, after Duncan\'s murder.')],
     spoken:Q("Nought's had, all's spent, Where our desire is got without content:")});
-  yield* one('lady',{prompt:'She thinks it is safer to be the victim.',
-    real:[ok(Q("'Tis safer to be that which we destroy")),
-          no(Q('Out, damned spot!'),'wash','That is Lady Macbeth in Act 5, Scene 1, sleepwalking. It happens much later.'),
-          no(Q('Give me the daggers'),'lady_arrest','That is Lady Macbeth in Act 2, Scene 2, after Duncan\'s murder.')],
-    spoken:Q("'Tis safer to be that which we destroy Than by destruction dwell in doubtful joy.")});
+  yield say('lady',Q("'Tis safer to be that which we destroy Than by destruction dwell in doubtful joy."));
   A('macbeth').x=410;A('macbeth').y=140;A('macbeth').vis=true;
   yield* plainOne({prompt:'Why is the queen unhappy?',said:'She has the crown, but no peace or safety.',
     plain:[ok('She has the crown, but no peace or safety.'),
@@ -2223,14 +2489,18 @@ function* ladyThought(){
           no(Q('Think of this, good peers'),'lady_arrest','That is Lady Macbeth in 3.4, to the lords, about the ghost.')],
     spoken:Q("Come on; Gentle my lord, sleek o'er your rugged looks; Be bright and jovial among your guests to-night.")});
   yield say('macbeth',Q("So shall I, love; and so, I pray, be you: Let your remembrance apply to Banquo; Present him eminence, both with eye and tongue: Unsafe the while, that we Must lave our honours in these flattering streams, And make our faces vizards to our hearts, Disguising what they are."));
+  yield* plainOne({prompt:'What does "vizards to our hearts" mean?',said:'Wear a mask to hide what we feel.',
+    plain:[ok('Wear a mask to hide what we feel.'),
+           no('Show the lords what we really feel.','confess','A vizard is a mask. He says to hide what they are, not to show it.'),
+           no('Hide our faces so no one sees us.','peace','He means a mask for their feelings. They must still be seen at the feast, looking cheerful.')]});
   yield* plainOne({prompt:'Why must he look cheerful tonight?',said:'A king who looks worried looks guilty.',
     plain:[ok('A king who looks worried looks guilty.'),
            no('So the guests enjoy the feast.','peace','Her aim is how things look to the court, not the guests\' fun.'),
            no('So the guests will learn the truth.','confess','The opposite: she wants appearance to hide reality.')]});
-  yield narr('Say her words again, from memory. Type the missing words.');
-  yield* recall('lady',{line:Q("Nought's had, all's spent"),gap:"all's spent"});
-  yield* recall('lady',{line:Q("'Tis safer to be that which we destroy"),gap:'that which we destroy'});
-  yield* recall('lady',{line:Q("Things without all remedy Should be without regard: what's done is done"),gap:"what's done is done"});
+  yield narr('Say her words again, from memory. Pick the missing words.');
+  yield* recall('lady',{line:Q("Nought's had, all's spent"),gap:"all's spent",bad:['all is lost', 'all is gone']});
+  yield* recall('lady',{line:Q("'Tis safer to be that which we destroy"),gap:'that which we destroy',bad:['that which we desire', 'that which we deserve']});
+  yield* recall('lady',{line:Q("Things without all remedy Should be without regard: what's done is done"),gap:"what's done is done",bad:['what is lost is lost', 'what is said is said']});
   plot('ACT 3, SCENE 2','Alone, Lady Macbeth admits that getting what they wanted has brought no joy. She tells Macbeth to stop brooding and to hide his worries from the guests.');
 }
 
@@ -2301,67 +2571,38 @@ function* macbethMurderers(){
   yield* sceneIn(null,null,'throne',{macbeth:[196,140,'r'],m1:[430,146,'l'],m2:[446,152,'l']});
   yield narr('The two men come in from the gate. Their hoods are up. Macbeth sends the attendant away and speaks to them alone.');
   yield walk({id:'m1',x:246,y:146},{id:'m2',x:268,y:152});
-  yield* one('macbeth',{prompt:'Begin: remind them of yesterday.',
-    real:[ok(Q('Was it not yesterday we spoke together?')),
-          no(Q('Ride you this afternoon?'),'peace','That is Macbeth to Banquo, earlier today.'),
-          no(Q('Bring them before us.'),'confess','That is Macbeth to his attendant, a few minutes ago.')],
-    spoken:Q('Was it not yesterday we spoke together?')});
-  yield say('m1',Q('It was, so please your highness.'));
-  yield* two('macbeth',{prompt:'Remind them who made their lives hard.',
-    plain:[ok('Tell them Banquo kept them down.'),
-           no('Tell them Duncan wronged them.','confess','Macbeth would never point at Duncan. He killed Duncan.'),
-           no('Tell them it was just bad luck.','peace','Macbeth needs them to hate Banquo, so he gives them someone to blame.')],
-    prompt2:'Now say it as the play does:',
-    real:[ok(Q('it was he in the times past')),
-          no(Q('Thanks for that'),'confess','That is Macbeth in 3.4, to the murderer at the feast.'),
-          no(Q('Here had we now our'),'peace','That is Macbeth in 3.4, wishing Banquo were at the feast.')],
-    spoken:Q("Well then, now Have you consider'd of my speeches? Know That it was he in the times past which held you So under fortune, which you thought had been Our innocent self: this I made good to you In our last conference, pass'd in probation with you, How you were borne in hand, how cross'd, the instruments, Who wrought with them, and all things else that might To half a soul and to a notion crazed Say 'Thus did Banquo.'")});
+  yield say('macbeth',Q("Well then, now Have you consider'd of my speeches? Know That it was he in the times past which held you So under fortune,"));
   yield say('m1',Q('You made it known to us.'));
-  yield* plainOne({prompt:'Why does Macbeth stir up their anger first?',said:'Angry men will do what he cannot say.',
-    plain:[ok('Angry men will do what he cannot say.'),
-           no('He wants to learn if they are honest.','peace','He is not testing their honesty. He is lighting a fire.'),
-           no('He wants them to forgive Banquo.','banquo_king','The opposite: he wants their hatred of Banquo to grow.')]});
-  yield* two('macbeth',{prompt:'Test them. Are they too gentle?',prompt2:'Now say it as the play does:',
-    plain:[ok('Ask if they are too gentle for revenge.'),
-           no('Promise them safety if they refuse.','peace','Macbeth does not offer safety. He shames them, then promises a reward.'),
-           no('Warn them what happens if they talk.','confess','Macbeth does not threaten them here. He shames them, then rewards them.')],
-    real:[ok(Q("Are you so gospell'd")),
-          no(Q('Are you a man?'),'lady_arrest','That is Lady Macbeth in 3.4, to her husband at the feast.'),
-          no(Q('We are men, my liege.'),'confess','That is the murderer\'s answer, the very next line.')],
-    spoken:Q("I did so, and went further, which is now Our point of second meeting. Do you find Your patience so predominant in your nature That you can let this go? Are you so gospell'd To pray for this good man and for his issue, Whose heavy hand hath bow'd you to the grave And beggar'd yours for ever?")});
+  yield* plainOne({prompt:'Who does Macbeth say kept them down?',said:'He puts the blame on Banquo.',
+    plain:[ok('Banquo. He blames him for their hard lives.'),
+           no('Duncan wronged them.','confess','Macbeth would never point at Duncan. He killed Duncan.'),
+           no('It was just bad luck.','peace','Macbeth needs them to hate Banquo, so he gives them someone to blame.')]});
+  yield say('macbeth',Q("Do you find Your patience so predominant in your nature That you can let this go?"));
   yield say('m1',Q('We are men, my liege.'));
-  yield say('macbeth',Q("Ay, in the catalogue ye go for men; As hounds and greyhounds, mongrels, spaniels, curs, Shoughs, water-rugs and demi-wolves, are clept All by the name of dogs:"));
-  yield say('macbeth',Q("Now, if you have a station in the file, Not i' the worst rank of manhood, say 't; And I will put that business in your bosoms, Whose execution takes your enemy off, Grapples you to the heart and love of us, Who wear our health but sickly in his life, Which in his death were perfect."));
+  yield say('macbeth',Q("Ay, in the catalogue ye go for men;"));
+  yield say('macbeth',Q("Now, if you have a station in the file, Not i' the worst rank of manhood, say 't;"));
+  yield* plainOne({prompt:'How does Macbeth push them to say yes?',said:'He shames their manhood, as his wife did to him.',
+    plain:[ok('He says a real man would do it.'),
+           no('He threatens to arrest them.','confess','Macbeth does not threaten them. He shames them, then promises a reward.'),
+           no('He begs them to forgive Banquo.','banquo_king','The opposite: he wants their hatred of Banquo to grow.')]});
   yield say('m2',Q("I am one, my liege, Whom the vile blows and buffets of the world Have so incensed that I am reckless what I do to spite the world."));
   yield say('m1',Q("And I another So weary with disasters, tugg'd with fortune, That I would set my lie on any chance, To mend it, or be rid on't."));
-  yield* plainOne({prompt:'Why do these two men say yes?',said:'Their lives are hard, and they have nothing to lose.',
-    plain:[ok('Hard lives. They have nothing to lose.'),
-           no('They love their king.','confess','They never say they love Macbeth. They are weary, angry and reckless.'),
-           no('They think Banquo is a traitor.','peace','They do not accuse Banquo of treason. They are men with nothing to lose.')]});
   yield say('macbeth',Q("Both of you Know Banquo was your enemy."));
   yield say('m1',Q('True, my lord.'));
+  yield say('macbeth',Q("So is he mine; and in such bloody distance, That every minute of his being thrusts Against my near'st of life:"));
   yield* plainOne({prompt:'Why not arrest Banquo in the open?',said:'Banquo has friends the king cannot afford to lose.',
     plain:[ok('Banquo has friends the king cannot lose.'),
            no('The law does not allow it.','confess','Macbeth is king. The reason is that Banquo\'s friends are also his.'),
            no('He is afraid of Banquo\'s army.','peace','Macbeth never mentions an army. He mentions "certain friends that are both his and mine".')]});
-  yield say('macbeth',Q("So is he mine; and in such bloody distance, That every minute of his being thrusts Against my near'st of life: and though I could With barefaced power sweep him from my sight And bid my will avouch it, yet I must not, For certain friends that are both his and mine, Whose loves I may not drop, but wail his fall Who I myself struck down; and thence it is, That I to your assistance do make love, Masking the business from the common eye For sundry weighty reasons."));
-  yield say('m2',Q('We shall, my lord, Perform what you command us.'));
-  yield* two('macbeth',{prompt:'Tell them when, and where.',prompt2:'Now say it as the play does:',
-    plain:[ok('Tonight, far from the palace, with his son.'),
-           no('Tomorrow, in the palace hall.','palace_blood','Macbeth wants it done tonight, and far from the palace.'),
-           no('At noon, on the busy road.','day_road','Macbeth wants the dark. A busy road is full of witnesses.')],
-    real:[ok(Q("for't must be done to-night")),
-          no(Q('It will be rain to-night.'),'day_road','That is Banquo, in the next scene, just before he is attacked.'),
-          no(Q('Be innocent of the knowledge'),'confess','That is Macbeth to Lady Macbeth, in 3.2.')],
-    spoken:Q("Your spirits shine through you. Within this hour at most I will advise you where to plant yourselves; Acquaint you with the perfect spy o' the time, The moment on't; for't must be done to-night, And something from the palace;")});
-  yield say('macbeth',Q("always thought That I require a clearness: and with him-- To leave no rubs nor botches in the work-- Fleance his son, that keeps him company, Whose absence is no less material to me Than is his father's, must embrace the fate Of that dark hour. Resolve yourselves apart: I'll come to you anon."));
+  yield say('macbeth',Q("for't must be done to-night, And something from the palace;"));
+  yield say('macbeth',Q("Fleance his son, that keeps him company, Whose absence is no less material to me Than is his father's, must embrace the fate Of that dark hour."));
   yield say('m1',Q('We are resolved, my lord.'));
-  yield narr('Say his words again, from memory. Type the missing words.');
-  yield* recall('macbeth',{line:Q("The moment on't; for't must be done to-night"),gap:'must be done to-night'});
-  yield* recall('macbeth',{line:Q("Whose absence is no less material to me"),gap:'no less material'});
-  yield say('macbeth',Q("I'll call upon you straight: abide within. It is concluded. Banquo, thy soul's flight, If it find heaven, must find it out to-night."));
-  yield* recall('macbeth',{line:Q("If it find heaven, must find it out to-night"),gap:'must find it out to-night'});
-  plot(TLINE+'1','Macbeth stirs up the anger of two desperate men against Banquo. He cannot act openly, because Banquo has friends. He orders the killing for tonight, away from the palace, and Fleance must die too.');
+  yield say('macbeth',Q("It is concluded. Banquo, thy soul's flight, If it find heaven, must find it out to-night."));
+  yield* plainOne({prompt:'What does Macbeth order them to do?',said:'Kill Banquo and Fleance tonight, away from the palace.',
+    plain:[ok('Kill Banquo and Fleance tonight.'),
+           no('Kill Banquo in the palace tomorrow.','palace_blood','Macbeth wants it done tonight, and far from the palace.'),
+           no('Kill Banquo at noon on the road.','day_road','Macbeth wants the dark. A busy road is full of witnesses.')]});
+  plot(TLINE+'1','Macbeth blames Banquo for the hard lives of two desperate men and shames their manhood until they agree. He cannot act openly, because Banquo has friends. He orders the killing for tonight, away from the palace, and Fleance must die too.');
   yield* exitCourt(['m1','m2']);
 }
 
@@ -2380,11 +2621,6 @@ function* macbethScene2(){
           no(Q("what's done is done"),'confess','That is Lady Macbeth, the line she has just said to you.'),
           no(Q("Is he dispatch'd?"),'confess','That is Macbeth in 3.4, to the murderer at the feast.')],
     spoken:Q("We have scotch'd the snake, not kill'd it: She'll close and be herself, whilst our poor malice Remains in danger of her former tooth.")});
-  yield* one('macbeth',{prompt:'He would rather the world fell apart.',
-    real:[ok(Q('let the frame of things disjoint')),
-          no(Q('Sleep no more!'),'dagger','That is Macbeth in Act 2, just after he kills Duncan.'),
-          no(Q('Out, out, brief candle!'),'sunset','That is Macbeth in Act 5, when he hears his wife is dead.')],
-    spoken:Q("But let the frame of things disjoint, both the worlds suffer, Ere we will eat our meal in fear and sleep In the affliction of these terrible dreams That shake us nightly: better be with the dead, Whom we, to gain our peace, have sent to peace, Than on the torture of the mind to lie In restless ecstasy. Duncan is in his grave; After life's fitful fever he sleeps well; Treason has done his worst: nor steel, nor poison, Malice domestic, foreign levy, nothing, Can touch him further.")});
   yield say('lady',Q("Come on; Gentle my lord, sleek o'er your rugged looks; Be bright and jovial among your guests to-night."));
   yield* two('macbeth',{prompt:'She says: look cheerful. Agree.',prompt2:'Now say it as the play does:',
     plain:[ok('Agree to pretend, and honour Banquo.'),
@@ -2401,7 +2637,10 @@ function* macbethScene2(){
 function* scorpions(hero){
   if(hero==='macbeth'){
     yield say('lady',Q('You must leave this.'));
-    yield* one('macbeth',{prompt:'Tell her why you cannot stop.',
+    yield* two('macbeth',{prompt:'Tell her what torments you.',prompt2:'Now say it as the play does:',
+      plain:[ok('Paranoia, anxiety and guilt torture him.'),
+             no('A fever is making his body weak.','peace','It is his mind that suffers, not his body.'),
+             no('He is full of joy at being king.','peace','He says the opposite: his mind is "full of scorpions".')],
       real:[ok(Q('full of scorpions is my mind')),
             no(Q('Is this a dagger which I see before me?'),'dagger','That is Macbeth in Act 2, before he kills Duncan.'),
             no(Q('We are yet but young in deed.'),'confess','That is Macbeth\'s LAST line in this scene.')],
@@ -2414,7 +2653,7 @@ function* scorpions(hero){
       spoken:Q("There's comfort yet; they are assailable; Then be thou jocund: ere the bat hath flown His cloister'd flight, ere to black Hecate's summons The shard-borne beetle with his drowsy hums Hath rung night's yawning peal, there shall be done A deed of dreadful note.")});
     yield say('lady',Q("What's to be done?"));
     yield* two('macbeth',{prompt:'She asks what you plan. What do you say?',prompt2:'Now say it as the play does:',
-      plain:[ok('Tell her to stay innocent until it is done.'),
+      plain:[ok('Tell her to keep out of it till it is done.'),
              no('Tell her everything.','confess','Macbeth keeps his plan from her. This is new in the marriage.'),
              no('Ask her to help plan it.','lady_arrest','In Act 1 she planned. Now he decides alone.')],
       real:[ok(Q('Be innocent of the knowledge, dearest chuck')),
@@ -2425,10 +2664,8 @@ function* scorpions(hero){
       plain:[ok('He no longer shares plans. He acts alone.'),
              no('She already knows and approves.','lady_arrest','She does not know. She has to ask "What\'s to be done?"'),
              no('He is waiting for her advice.','confess','He wants her to keep still and to hold her peace.')]});
-    yield narr('Say his words again, from memory. Type the missing words.');
-    yield* recall('macbeth',{line:Q("O, full of scorpions is my mind, dear wife!"),gap:'full of scorpions'});
-    yield* recall('macbeth',{line:Q("Be innocent of the knowledge, dearest chuck"),gap:'innocent of the knowledge'});
-    yield* recall('macbeth',{line:Q("Things bad begun make strong themselves by ill."),gap:'make strong themselves by ill'});
+    yield narr('Say his words again, from memory. Pick the missing words.');
+    yield* recall('macbeth',{line:Q("O, full of scorpions is my mind, dear wife!"),gap:'full of scorpions',bad:['full of serpents', 'full of shadows']});
   }else{
     yield* one('lady',{prompt:'Tell him to leave this brooding.',
       real:[ok(Q('You must leave this.')),
@@ -2452,10 +2689,8 @@ function* scorpions(hero){
       plain:[ok('Something awful is planned. She is out.'),
              no('He has asked her to do the deed.','lady_arrest','He asks her to stay "innocent of the knowledge".'),
              no('Nothing is planned. He is only upset.','peace','He says "a deed of dreadful note" will be done tonight.')]});
-    yield narr('Say her words again, from memory. Type the missing words.');
-    yield* recall('lady',{line:Q("But in them nature's copy's not eterne."),gap:"nature's copy's not eterne"});
-    yield* recall('lady',{line:Q("Be innocent of the knowledge, dearest chuck"),gap:'dearest chuck'});
-    yield* recall('lady',{line:Q("Things bad begun make strong themselves by ill."),gap:'make strong themselves by ill'});
+    yield narr('Say her words again, from memory. Pick the missing words.');
+    yield* recall('lady',{line:Q("But in them nature's copy's not eterne."),gap:"nature's copy's not eterne",bad:["nature's gift's not eterne", "nature's hand's not eterne"]});
   }
   plot(TLINE+'2',hero==='macbeth'?'Macbeth tells his wife that his mind is full of scorpions, and that Banquo and Fleance can be killed. He will not tell her the plan. She must stay innocent of it until it is done.':'Lady Macbeth asks what is to be done, and Macbeth will not tell her. For the first time in their marriage, she is shut out of his plans.');
 }
@@ -2497,16 +2732,16 @@ function* fightScene(hero){
     plain:[ok('So Fleance lives, and can take revenge.'),
            no('So Fleance can warn the king.','peace','Banquo says "Thou mayst revenge". He does not mention the king.'),
            no('So Fleance can fetch the horses.','day_road','Banquo is telling his son to save himself.')]});
-  yield narr('Say his last words again, from memory. Type the missing words.');
-  yield* recall('banquo',{line:Q("O, treachery! Fly, good Fleance, fly, fly, fly!"),gap:'fly, fly, fly'});
-  yield* recall('banquo',{line:Q("Thou mayst revenge. O slave!"),gap:'thou mayst revenge'});
+  yield narr('Say his last words again, from memory. Pick the missing words.');
+  yield* recall('banquo',{line:Q("O, treachery! Fly, good Fleance, fly, fly, fly!"),gap:'fly, fly, fly',bad:['run, run, run', 'ride, ride, ride']});
+  yield* recall('banquo',{line:Q("Thou mayst revenge. O slave!"),gap:'thou mayst revenge',bad:['thou mayst escape', 'thou mayst forgive']});
   plot(TLINE+'3','Three murderers attack Banquo in the dark. He cries out to Fleance to fly, and dies. Fleance escapes, so the witches\' promise to Banquo\'s sons is still alive.');
   yield doFade(1);
   yield card('BANQUO IS DEAD','Fleance has escaped into the night.');
 }
 
 /* ===================== 3.4 : THE BANQUET ===================== */
-const BQ={ross:[262,152,'l'],lennox:[284,148,'l'],lord1:[240,148,'l'],lord2:[300,170,'l']};
+const BQ={ross:[262,152,'l'],lennox:[284,148,'l'],lord1:[240,148,'l'],lord2:[300,170,'l'],lord:[318,150,'l']};
 function ghostIn(){const g=A('ghost');g.x=44;g.y=150;g.vis=true;g.dir='r';g.tint='rgba(150,210,255,.38)';g.alpha=.85;SFX.sting();}
 function* feastTail(hero){ // the lines the two of them share at the table
   yield say('lennox',Q("May't please your highness sit."));
@@ -2514,7 +2749,7 @@ function* feastTail(hero){ // the lines the two of them share at the table
 
 /* ---- Macbeth: the host, and the man at the door ---- */
 function* macbethBanquet1(){
-  yield* sceneIn(TLINE+'4','The hall of the palace. The feast. Night.','throne',Object.assign({macbeth:[150,140,'r'],lady:[120,138,'r']},BQ));
+  yield* sceneIn(TLINE+'4','The hall of the palace. The feast. Night.','feast',Object.assign({macbeth:[150,140,'r'],lady:[120,138,'r']},BQ));
   yield narr('The lords are seated. Macbeth plays the humble host. One chair is empty: Banquo\'s.');
   yield* two('macbeth',{prompt:'Welcome the lords to the table.',prompt2:'Now say it as the play does:',
     plain:[ok('Tell them to sit by rank. All are welcome.'),
@@ -2529,11 +2764,8 @@ function* macbethBanquet1(){
   yield say('lady',Q("Pronounce it for me, sir, to all our friends; For my heart speaks they are welcome."));
   yield say('macbeth',Q("See, they encounter thee with their hearts' thanks. Both sides are even: here I'll sit i' the midst: Be large in mirth; anon we'll drink a measure The table round."));
   yield narr('A man with a bloody face stands at the door. He catches Macbeth\'s eye. Nobody else notices.');
-  A('m1').x=44;A('m1').y=148;A('m1').dir='r';A('m1').vis=true;
-  yield* approach('The man at the door has news. Go to him quietly.',['m1','lady','ross','lennox'],'m1',
-    {lady:'Lady Macbeth smiles at the table. The man at the door is still waiting.',
-     ross:'Ross bows and waits for you to sit. The man at the door is still waiting.',
-     lennox:'Lennox bows. The man at the door is still waiting.'});
+  yield* sceneIn(null,null,'throne',{macbeth:[84,146,'l'],m1:[46,148,'r']});
+  yield narr('Macbeth leaves the table and goes to the door, away from his guests. The man with the bloody face is waiting.');
   yield* one('macbeth',{prompt:'Speak quietly. Look at his face.',
     real:[ok(Q("There's blood on thy face.")),
           no(Q('Which of you have done this?'),'ghost','That is Macbeth in 3.4, but to the lords, when he sees the ghost.'),
@@ -2551,10 +2783,9 @@ function* macbethBanquet1(){
   yield say('macbeth',Q("Then comes my fit again: I had else been perfect, Whole as the marble, founded as the rock, As broad and general as the casing air: But now I am cabin'd, cribb'd, confined, bound in To saucy doubts and fears. But Banquo's safe?"));
   yield say('m1',Q("Ay, my good lord: safe in a ditch he bides, With twenty trenched gashes on his head; The least a death to nature."));
   yield say('macbeth',Q("Thanks for that: There the grown serpent lies; the worm that's fled Hath nature that in time will venom breed, No teeth for the present. Get thee gone: to-morrow We'll hear, ourselves, again."));
-  yield narr('Say his words again, from memory. Type the missing words.');
-  yield* recall('macbeth',{line:Q("I had else been perfect, Whole as the marble, founded as the rock"),gap:'founded as the rock'});
-  yield* recall('macbeth',{line:Q("But now I am cabin'd, cribb'd, confined"),gap:"cribb'd, confined"});
   yield* exitCourt(['m1']);
+  yield* sceneIn(null,null,'feast',Object.assign({macbeth:[150,140,'r'],lady:[120,138,'r']},BQ));
+  yield narr('Macbeth comes back to the feast.');
   yield say('lady',Q("My royal lord, You do not give the cheer: the feast is sold That is not often vouch'd, while 'tis a-making, 'Tis given with welcome: to feed were best at home; From thence the sauce to meat is ceremony; Meeting were bare without it."));
   yield* two('macbeth',{prompt:'She is right. Thank her and toast.',prompt2:'Now say it as the play does:',
     plain:[ok('Thank her, and wish all well.'),
@@ -2574,15 +2805,16 @@ function* macbethBanquet1(){
   yield say('macbeth',Q("The table's full."));
   yield say('lennox',Q("Here is a place reserved, sir."));
   yield say('macbeth',Q("Where?"));
+  ghostIn();A('ghost').x=292;A('ghost').y=150;
+  yield narr('Macbeth goes to sit down. But Banquo is sitting in his seat, with blood on his hair. Only Macbeth can see him. He does not sit. He stares at the table.');
   yield say('lennox',Q("Here, my good lord. What is't that moves your highness?"));
-  plot(TLINE+'4','At the feast, the first murderer brings news: Banquo is dead, but Fleance has escaped. Macbeth\'s fear comes back at once.');
+  plot(TLINE+'4','At a quiet moment, the first murderer tells Macbeth that Banquo is dead but Fleance has escaped. Back at the feast, Macbeth finds Banquo\'s ghost sitting in his seat, and will not sit.');
 }
 
 /* ---- Macbeth: the ghost ---- */
 function* macbethGhost(){
-  yield* sceneIn(null,null,'throne',Object.assign({macbeth:[150,140,'r'],lady:[120,138,'r']},BQ));
-  ghostIn();
-  yield walk({id:'ghost',x:292,y:150,spd:60});
+  yield* sceneIn(null,null,'feast',Object.assign({macbeth:[150,140,'r'],lady:[120,138,'r']},BQ));
+  ghostIn();A('ghost').x=292;A('ghost').y=150;
   yield narr('Only Macbeth can see the figure that sits in his place. The lords see an empty chair.');
   yield* one('macbeth',{prompt:'Demand to know who did this.',
     real:[ok(Q('Which of you have done this?')),
@@ -2590,7 +2822,7 @@ function* macbethGhost(){
           no(Q("Is he dispatch'd?"),'confess','That is Macbeth to the murderer at the door, a moment ago.')],
     spoken:Q("Which of you have done this?")});
   yield say('lord1',Q('What, my good lord?'));
-  yield* one('macbeth',{prompt:'The ghost shakes its bloody head.',
+  yield* one('macbeth',{prompt:'Tell the ghost: you cannot say I killed him.',
     real:[ok(Q('Thou canst not say I did it')),
           no(Q('Blood hath been shed ere now'),'ghost','That is Macbeth a few lines later, once the ghost has gone.'),
           no(Q('Avaunt! and quit my sight!'),'ghost','That is Macbeth later, when the ghost returns.')],
@@ -2629,9 +2861,6 @@ function* macbethGhost(){
   yield say('lady',Q("Think of this, good peers, But as a thing of custom: 'tis no other; Only it spoils the pleasure of the time."));
   yield say('macbeth',Q("What man dare, I dare: Approach thou like the rugged Russian bear, The arm'd rhinoceros, or the Hyrcan tiger; Take any shape but that, and my firm nerves Shall never tremble: or be alive again, And dare me to the desert with thy sword; If trembling I inhabit then, protest me The baby of a girl. Hence, horrible shadow! Unreal mockery, hence!"));
   A('ghost').vis=false;SFX.hush();
-  yield narr('Say his words again, from memory. Type the missing words.');
-  yield* recall('macbeth',{line:Q("Approach thou like the rugged Russian bear"),gap:'rugged Russian bear'});
-  yield* recall('macbeth',{line:Q("Hence, horrible shadow! Unreal mockery, hence!"),gap:'unreal mockery'});
   yield say('macbeth',Q("Why, so: being gone, I am a man again. Pray you, sit still."));
   yield say('lady',Q("You have displaced the mirth, broke the good meeting, With most admired disorder."));
   yield say('macbeth',Q("Can such things be, And overcome us like a summer's cloud, Without our special wonder? You make me strange Even to the disposition that I owe, When now I think you can behold such sights, And keep the natural ruby of your cheeks, When mine is blanched with fear."));
@@ -2668,7 +2897,7 @@ function* macbethAfter(){
           no(Q('To be thus is nothing'),'peace','That is Macbeth in 3.1, alone, before the murder.')],
     spoken:Q("For mine own good, All causes shall give way: I am in blood Stepp'd in so far that, should I wade no more, Returning were as tedious as go o'er: Strange things I have in head, that will to hand; Which must be acted ere they may be scann'd.")});
   yield say('lady',Q("You lack the season of all natures, sleep."));
-  yield* one('macbeth',{prompt:'Tell her you are new at this.',
+  yield* one('macbeth',{prompt:'We need to get used to killing more people.',
     real:[ok(Q('We are yet but young in deed.')),
           no(Q('Sleep no more!'),'dagger','That is Macbeth in Act 2, after killing Duncan.'),
           no(Q('Hence, horrible shadow!'),'ghost','That is Macbeth to the ghost, earlier in this scene.')],
@@ -2677,15 +2906,12 @@ function* macbethAfter(){
     plain:[ok('Nothing stops him. He will go further.'),
            no('That he should stop and repent.','sunset','He decides to visit the witches and learn "the worst".'),
            no('That he should trust his wife again.','lady_arrest','He tells her little. He keeps his own plans.')]});
-  yield narr('Say his words again, from memory. Type the missing words.');
-  yield* recall('macbeth',{line:Q("Returning were as tedious as go o'er"),gap:"tedious as go o'er"});
-  yield* recall('macbeth',{line:Q("We are yet but young in deed."),gap:'young in deed'});
   plot(TLINE+'4','Alone with his wife, Macbeth says he is in blood so deep that turning back is as hard as going on. He will go to the witches tomorrow and learn the worst. He thinks he is still young in crime.');
 }
 
 /* ---- Lady Macbeth: the hostess ---- */
 function* ladyBanquet1(){
-  yield* sceneIn(TLINE+'4','The hall of the palace. The feast. Night.','throne',Object.assign({macbeth:[150,140,'r'],lady:[120,138,'r']},BQ));
+  yield* sceneIn(TLINE+'4','The hall of the palace. The feast. Night.','feast',Object.assign({macbeth:[150,140,'r'],lady:[120,138,'r']},BQ));
   yield narr('The lords are seated. Macbeth sits in the middle. Lady Macbeth keeps her state as hostess.');
   yield say('macbeth',Q("You know your own degrees; sit down: at first And last the hearty welcome."));
   yield say('lord1',Q('Thanks to your majesty.'));
@@ -2732,7 +2958,7 @@ function* ladyBanquet1(){
 }
 
 function* ladyBanquet2(){
-  yield* sceneIn(null,null,'throne',Object.assign({macbeth:[150,140,'r'],lady:[120,138,'r']},BQ));
+  yield* sceneIn(null,null,'feast',Object.assign({macbeth:[150,140,'r'],lady:[120,138,'r']},BQ));
   yield say('macbeth',Q("Which of you have done this?"));
   yield say('lord1',Q('What, my good lord?'));
   yield say('macbeth',Q("Thou canst not say I did it: never shake Thy gory locks at me."));
@@ -2752,7 +2978,7 @@ function* ladyBanquet2(){
           no(Q('Fie, for shame!'),'ghost','That is Lady Macbeth a few lines LATER.')],
     spoken:Q("O proper stuff! This is the very painting of your fear: This is the air-drawn dagger which, you said, Led you to Duncan. O, these flaws and starts, Impostors to true fear, would well become A woman's story at a winter's fire, Authorized by her grandam. Shame itself! Why do you make such faces? When all's done, You look but on a stool.")});
   yield say('macbeth',Q("Prithee, see there! behold! look! lo! how say you? Why, what care I? If thou canst nod, speak too. If charnel-houses and our graves must send Those that we bury back, our monuments Shall be the maws of kites."));
-  yield* one('lady',{prompt:'He is losing control. Call it folly.',
+  yield* one('lady',{prompt:'He is losing control.',
     real:[ok(Q("What, quite unmann'd in folly?")),
           no(Q('Are you a man?'),'ghost','You said that a minute ago.'),
           no(Q('Be bright and jovial among your guests'),'peace','That is what you told him earlier, in 3.2.')],
@@ -2768,7 +2994,7 @@ function* ladyBanquet2(){
     plain:[ok('Say it is a habit that spoils the evening.'),
            no('Tell them he speaks to Banquo.','confess','She never says it. She does not know what he sees.'),
            no('Tell them to stay and hear him out.','peace','She wants them to say nothing about it.')],
-    real:[ok(Q('Think of this, good peers')),
+    real:[ok(Q('a thing of custom:')),
           no(Q('Sit, worthy friends'),'lady_arrest','That is what you said before the toast.'),
           no(Q('Stand not upon the order of your going'),'lady_arrest','That is Lady Macbeth LATER, when she sends them away.')],
     spoken:Q("Think of this, good peers, But as a thing of custom: 'tis no other; Only it spoils the pleasure of the time.")});
@@ -2780,8 +3006,8 @@ function* ladyBanquet2(){
     spoken:Q("You have displaced the mirth, broke the good meeting, With most admired disorder.")});
   yield say('macbeth',Q("Can such things be, And overcome us like a summer's cloud, Without our special wonder? You make me strange Even to the disposition that I owe, When now I think you can behold such sights, And keep the natural ruby of your cheeks, When mine is blanched with fear."));
   yield say('ross',Q("What sights, my lord?"));
-  yield* two('lady',{prompt:'Stop him before he says too much.',prompt2:'Now say it as the play does:',
-    plain:[ok('Send the lords away at once.'),
+  yield* two('lady',{prompt:'Ask the lords not to talk to Macbeth.',prompt2:'Now say it as the play does:',
+    plain:[ok('Tell them to go, and not to question him.'),
            no('Let Ross hear what Macbeth saw.','confess','She wants no one to ask. "Question enrages him."'),
            no('Ask the lords to stay and help him.','peace','The opposite: she sends them away, fast.')],
     real:[ok(Q('I pray you, speak not')),
@@ -2795,9 +3021,6 @@ function* ladyBanquet2(){
     plain:[ok('The look of a king in control.'),
            no('The guests\' feelings.','peace','She sends the guests away. She protects how things look.'),
            no('Banquo\'s good name.','banquo_king','She does not mention Banquo. She does not know what he has done.')]});
-  yield narr('Say her words again, from memory. Type the missing words.');
-  yield* recall('lady',{line:Q("This is the very painting of your fear"),gap:'painting of your fear'});
-  yield* recall('lady',{line:Q("Stand not upon the order of your going"),gap:'order of your going'});
   plot(TLINE+'4','Macbeth shouts at an empty chair. Lady Macbeth sees nothing, calls it a fit and a painting of his fear, and sends the guests away before he gives himself away.');
 }
 
@@ -2812,7 +3035,10 @@ function* ladyAfter(){
           no(Q("What's to be done?"),'confess','You asked him that earlier, in 3.2.')],
     spoken:Q("Did you send to him, sir?")});
   yield say('macbeth',Q("I hear it by the way; but I will send: There's not a one of them but in his house I keep a servant fee'd. I will to-morrow, And betimes I will, to the weird sisters: More shall they speak; for now I am bent to know, By the worst means, the worst. For mine own good, All causes shall give way: I am in blood Stepp'd in so far that, should I wade no more, Returning were as tedious as go o'er: Strange things I have in head, that will to hand; Which must be acted ere they may be scann'd."));
-  yield* one('lady',{prompt:'Tell him what he lacks.',
+  yield* two('lady',{prompt:'Tell him what he lacks.',prompt2:'Now say it as the play does:',
+    plain:[ok('He lacks sleep, which all natures need.'),
+           no('He lacks the courage to face guests.','peace','She does not call him a coward here. She tells him he needs sleep.'),
+           no('He lacks a crown, so he must act.','confess','He is already king. She tells him he needs sleep.')],
     real:[ok(Q('You lack the season of all natures, sleep.')),
           no(Q('You must leave this.'),'peace','That is what you said to him earlier, in 3.2.'),
           no(Q('Fie, for shame!'),'ghost','That is Lady Macbeth at the ghost.')],
@@ -2822,9 +3048,6 @@ function* ladyAfter(){
     plain:[ok('Now he decides alone. She only reacts.'),
            no('Now she leads him.','lady_arrest','The opposite. In Act 2 she led. Now he decides alone.'),
            no('She feels no doubt at all.','wash','She will break in Act 5, when she sleepwalks.')]});
-  yield narr('Say her words again, from memory. Type the missing words.');
-  yield* recall('lady',{line:Q("You lack the season of all natures, sleep."),gap:'season of all natures'});
-  yield* recall('lady',{line:Q("Almost at odds with morning, which is which."),gap:'at odds with morning'});
   plot(TLINE+'4','Alone with Macbeth, Lady Macbeth asks if he sent for Macduff. He says he will visit the witches and go further. She tells him he needs sleep. He decides alone now, and she can only answer.');
 }
 
@@ -2836,6 +3059,11 @@ function* hecateScene(hero){
   A('hecate').vis=false;
   yield doFade(0);
   yield narr('Some scholars think another writer added this scene. It is still part of the play as we have it.');
+  const sk=yield ask('Watch this scene, or skip it?',[{t:'Watch the scene',ok:1},{t:'Skip this scene'}]);
+  if(sk===1){
+    plot(TLINE+'5','On the heath, Hecate scolds the three witches for dealing with Macbeth without her. She plans illusions to draw him on. He will feel safe, and "security is mortals\' chiefest enemy".');
+    return;
+  }
   yield fn(()=>{shake=7;SFX.boom();A('hecate').vis=true;});
   yield walk({id:'hecate',x:250,y:152,spd:70});
   yield say('witch1',Q('Why, how now, Hecate! you look angerly.'));
@@ -2858,9 +3086,9 @@ function* hecateScene(hero){
     plain:[ok('Feeling too safe. Security is the enemy.'),
            no('Being too afraid to act.','peace','She says he will "spurn fate, scorn death". He will not be afraid.'),
            no('The anger of the witches.','confess','She says his own false confidence will undo him.')]});
-  yield narr('Say her words again, from memory. Type the missing words.');
-  yield* recall('hecate',{line:Q("Upon the corner of the moon There hangs a vaporous drop profound"),gap:'corner of the moon'});
-  yield* recall('hecate',{line:Q("And you all know, security Is mortals' chiefest enemy."),gap:"mortals' chiefest enemy"});
+  yield narr('Say her words again, from memory. Pick the missing words.');
+  yield* recall('hecate',{line:Q("Upon the corner of the moon There hangs a vaporous drop profound"),gap:'corner of the moon',bad:['edge of the moon', 'face of the moon']});
+  yield* recall('hecate',{line:Q("And you all know, security Is mortals' chiefest enemy."),gap:"mortals' chiefest enemy",bad:["mortals' deadliest foe", "mortals' surest friend"]});
   yield say('hecate',Q("Hark! I am call'd; my little spirit, see, Sits in a foggy cloud, and stays for me."));
   yield fn(()=>{shake=5;SFX.boom();A('hecate').tx=300;A('hecate').ty=40;A('hecate').spd=90;});
   yield wait(1.6);
@@ -2976,5 +3204,3 @@ window.__crown={restartScene,run,setup,recall,Q,doFade,narr,fade,ending:k=>{newG
 if(document.fonts&&document.fonts.load){Promise.race([document.fonts.load('8px "Press Start 2P"'),new Promise(r=>setTimeout(r,1500))]).then(boot,boot);}else boot();
 })();
 </script>
-
-</body></html>
